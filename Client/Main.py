@@ -13,7 +13,7 @@ pygame.init()
 pygame.mixer.init()
 pygame.mixer.music.set_endevent(pygame.USEREVENT)
 
-# window_width, window_height = 1080, 720
+#window_width, window_height = 1080, 720
 window_width, window_height = 2560, 1440
 
 SCREEN = pygame.display.set_mode((window_width, window_height))
@@ -64,8 +64,12 @@ class Flag2Country():
         self.countries = pycountry.countries
         self.list_of_countries = []
         self.list_of_choosen_countries = []  # Liste der random ausgewählten Länder
-        self.pos_list = [(window_width / 2 - window_width / 2.3, window_height // 2), (700, 325), (50, 550),
-                         (700, 550)]  # Antwort Positionen
+        self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
+                         (window_width / 2 + window_width / 15, window_height / 2),
+                         (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
+                         (
+                             window_width / 2 + window_width / 15,
+                             window_height / 2 + window_height / 4)]  # 4 unten rechts
         self.picked_flag = ""
         self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
         self.streak = streak
@@ -132,7 +136,10 @@ class Flag2Country():
     def assign_pos(self):
         if not self.pos_list:
             Flag2Country.pos_count = 0
-            self.pos_list = [(50, 350), (700, 350), (50, 550), (700, 550)]
+            self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
+                             (window_width / 2 + window_width / 15, window_height / 2),
+                             (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
+                             (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
             return
 
         pos_var_name = "pos_" + str(Flag2Country.pos_count + 1)
@@ -178,22 +185,26 @@ class Flag2Country():
             SCREEN.fill("#353a3c")  # Erschafft Illusion von einem neuen Fenster / #353a3c
 
             answer_1 = Button_xy_cords(image=None, pos=obj.pos_1,
-                                       text_input=self.list_of_choosen_countries[0], font=get_font(30),
+                                       text_input=self.list_of_choosen_countries[0],
+                                       font=get_font(calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
             answer_2 = Button_xy_cords(image=None, pos=obj.pos_2,
-                                       text_input=self.list_of_choosen_countries[1], font=get_font(30),
+                                       text_input=self.list_of_choosen_countries[1],
+                                       font=get_font(calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
             answer_3 = Button_xy_cords(image=None, pos=obj.pos_3,
-                                       text_input=self.list_of_choosen_countries[2], font=get_font(30),
+                                       text_input=self.list_of_choosen_countries[2],
+                                       font=get_font(calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
             answer_4 = Button_xy_cords(image=None, pos=obj.pos_4,
-                                       text_input=self.country_name, font=get_font(30),
+                                       text_input=self.country_name,
+                                       font=get_font(calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
@@ -201,7 +212,7 @@ class Flag2Country():
                 os.path.join('flags', self.picked_flag)
             )
             flag = pygame.transform.scale(flag_img, (self.FLAG_WIDTH, self.FLAG_HEIGHT))
-            SCREEN.blit(flag, (400, 50))
+            SCREEN.blit(flag, (window_width / 2 - self.FLAG_WIDTH / 2, window_height / 9))
 
             for button in [answer_1, answer_2, answer_3, answer_4]:
                 button.changeColor(DRAW_MOUSE_POS)
@@ -215,10 +226,12 @@ class Flag2Country():
             seconds = elapsed_time_display // 1000
             milliseconds = elapsed_time_display % 1000
 
-            seconds_text = get_font(20).render(f"Time: {seconds} seconds", True, WHITE)
-            milliseconds_text = get_font(20).render(f"and {milliseconds} ms", True, WHITE)
-            SCREEN.blit(seconds_text, (850, 130))
-            SCREEN.blit(milliseconds_text, (850, 160))
+            seconds_text = get_font(calculate_font_size(window_width, window_height, 0.03)).render(
+                f"Time: {seconds} seconds", True, WHITE)
+            milliseconds_text = get_font(calculate_font_size(window_width, window_height, 0.03)).render(
+                f"and {milliseconds} ms", True, WHITE)
+            SCREEN.blit(seconds_text, (window_width / 2 + self.FLAG_WIDTH - window_width / 10, window_height / 9))
+            SCREEN.blit(milliseconds_text, (window_width / 2 + self.FLAG_WIDTH - window_width / 10, window_height / 6))
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -265,24 +278,34 @@ class Flag2Country():
             TRUE_MOUSE_POS = pygame.mouse.get_pos()
             SCREEN.fill("#353a3c")
 
-            true_text = get_font(45).render("Richtige Antwort", True, "Green")
-            true_rect = true_text.get_rect(center=(600, 100))
-            SCREEN.blit(true_text, true_rect)
+            heading_text = get_font(calculate_font_size(window_width, window_height, 0.09)).render("Richtige Antwort",
+                                                                                                   True, "Green")
+            heading_rect = heading_text.get_rect(center=(window_width / 2, window_height / 9))
+            SCREEN.blit(heading_text, heading_rect)
 
-            streak_text = get_font(40).render(f"Streak: {self.streak}", True, "White")
-            streak_rect = streak_text.get_rect(center=(200, 300))
+            streak_text = get_font(calculate_font_size(window_width, window_height, 0.04)).render(
+                f"Streak: {self.streak}", True, "White")
+            streak_rect = streak_text.get_rect(center=(window_width / 2 - window_width / 3, window_height / 2))
             SCREEN.blit(streak_text, streak_rect)
 
-            next_button = Button(image=None, pos=(600, 490),
-                                 text_input="Nächste", font=get_font(50), base_color="WHITE",
+            next_button = Button(image=None,
+                                 pos=(window_width / 2 - window_width / 2.75, window_height / 2 + window_height / 2.75),
+                                 text_input="Next",
+                                 font=get_font(calculate_font_size(window_width, window_height, 0.06)),
+                                 base_color="WHITE",
                                  hovering_color="Light Blue")
 
-            menu_button = Button(image=None, pos=(150, 600),
-                                 text_input="Menu", font=get_font(40), base_color="WHITE",
+            menu_button = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 2.75),
+                                 text_input="Menu",
+                                 font=get_font(calculate_font_size(window_width, window_height, 0.06)),
+                                 base_color="WHITE",
                                  hovering_color="Light Blue")
 
-            save_button = Button(image=None, pos=(1000, 600),
-                                 text_input="Save", font=get_font(30), base_color="WHITE",
+            save_button = Button(image=None,
+                                 pos=(window_width / 2 + window_width / 2.5, window_height / 2 + window_height / 2.75),
+                                 text_input="Save",
+                                 font=get_font(calculate_font_size(window_width, window_height, 0.06)),
+                                 base_color="WHITE",
                                  hovering_color="Light Blue")
 
             for button in [next_button, menu_button, save_button]:
@@ -292,10 +315,12 @@ class Flag2Country():
             seconds = self.elapsed_time // 1000
             milliseconds = self.elapsed_time % 1000
 
-            seconds_text = get_font(20).render(f"Guessed right in: {seconds} seconds", True, WHITE)
-            milliseconds_text = get_font(20).render(f"         and {milliseconds} ms", True, WHITE)
-            SCREEN.blit(seconds_text, (600, 275))
-            SCREEN.blit(milliseconds_text, (600, 315))
+            time_text = get_font(calculate_font_size(window_width, window_height, 0.03)).render(
+                f"Guessed right in:", True, WHITE)
+            clock_text = get_font(calculate_font_size(window_width, window_height, 0.03)).render(
+                f"{seconds} seconds and {milliseconds} ms", True, WHITE)
+            SCREEN.blit(time_text, (window_width / 2, window_height / 2 - window_height / 15))
+            SCREEN.blit(clock_text, (window_width / 2, window_height / 2))
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -325,34 +350,46 @@ class Flag2Country():
         while True:
             FALSE_MOUSE_POS = pygame.mouse.get_pos()
             SCREEN.fill("#353a3c")
-            true_text = get_font(45).render("Falsche Antwort", True, "Red")
-            true_rect = true_text.get_rect(center=(600, 100))
-            SCREEN.blit(true_text, true_rect)
+            heading_text = get_font(calculate_font_size(window_width, window_height, 0.09)).render("Falsche Antwort",
+                                                                                                   True, "Red")
+            heading_rect = heading_text.get_rect(center=(window_width / 2, window_height / 9))
+            SCREEN.blit(heading_text, heading_rect)
 
-            correct_country_text = get_font(30).render(self.country_name, True, "Green")
-            correct_country_rect = correct_country_text.get_rect(center=(800, 350))
+            correct_country_text = get_font(calculate_font_size(window_width, window_height, 0.04)).render(
+                self.country_name, True, "Green")
+            correct_country_rect = correct_country_text.get_rect(
+                center=(window_width / 2 + window_width / 3, window_height / 2))
             SCREEN.blit(correct_country_text, correct_country_rect)
 
-            streak_text = get_font(35).render(f"Streak: {self.streak}", True, "White")
-            streak_rect = streak_text.get_rect(center=(940, 200))
+            streak_text = get_font(calculate_font_size(window_width, window_height, 0.04)).render(
+                f"Streak: {self.streak}", True, "White")
+            streak_rect = streak_text.get_rect(center=(window_width / 2 - window_width / 3, window_height / 2))
             SCREEN.blit(streak_text, streak_rect)
 
             flag_img = pygame.image.load(
                 os.path.join('flags', self.picked_flag)
             )
             flag = pygame.transform.scale(flag_img, (self.FLAG_WIDTH, self.FLAG_HEIGHT))
-            SCREEN.blit(flag, (75, 250))
+            SCREEN.blit(flag, (window_width / 2 - self.FLAG_WIDTH / 2, window_height / 2 - window_height / 6))
 
-            next_button = Button(image=None, pos=(520, 600),
-                                 text_input="Erneut versuchen", font=get_font(30), base_color="WHITE",
+            next_button = Button(image=None,
+                                 pos=(window_width / 2 - window_width / 2.75, window_height / 2 + window_height / 2.75),
+                                 text_input="Next",
+                                 font=get_font(calculate_font_size(window_width, window_height, 0.06)),
+                                 base_color="WHITE",
                                  hovering_color="Light Blue")
 
-            menu_button = Button(image=None, pos=(80, 600),
-                                 text_input="Menu", font=get_font(30), base_color="WHITE",
+            menu_button = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 2.75),
+                                 text_input="Menu",
+                                 font=get_font(calculate_font_size(window_width, window_height, 0.06)),
+                                 base_color="WHITE",
                                  hovering_color="Light Blue")
 
-            save_button = Button(image=None, pos=(1000, 600),
-                                 text_input="Save", font=get_font(30), base_color="WHITE",
+            save_button = Button(image=None,
+                                 pos=(window_width / 2 + window_width / 2.5, window_height / 2 + window_height / 2.75),
+                                 text_input="Save",
+                                 font=get_font(calculate_font_size(window_width, window_height, 0.06)),
+                                 base_color="WHITE",
                                  hovering_color="Light Blue")
 
             for button in [next_button, menu_button, save_button]:
@@ -382,85 +419,6 @@ class Flag2Country():
 
             pygame.display.update()
             clock.tick(target_fps)
-
-
-class Country2Flag():
-
-    def __init__(self):
-        self.picked_flags = []
-        self.country_name = ""
-        self.pos_list = [(50, 325), (700, 325), (50, 550), (700, 550)]
-
-    def increase_streak(self):
-        self.streak = self.streak + 1
-
-    def reset_streak(self):
-        self.streak = 0
-
-    def value_generator(self):
-        items = os.listdir(
-            r"C:\Users\ktown\Dokumente\Maximilian\Programmieren\Phyton\Geogame\Flagchoose+Backend\flags")  # gets the directory information
-        self.picked_flags.clear()
-        for i in range(0, 4):
-            random_number = random.randint(1, 209)  # picks a random image
-            self.picked_flags.append(items[random_number])  # it pickes a item from the directory
-        flag_code = self.picked_flags[3].replace(".png", "")
-        flag_code = flag_code.upper()  # transforms the imagename to an alpha_2 code
-        self.country_name = pycountry_convert.country_alpha2_to_country_name(
-            flag_code)  # converts the alpha_2 code into the country name
-
-    def assign_pos(self):
-        if not self.pos_list:
-            Flag2Country.pos_count = 0
-            self.pos_list = [(50, 325), (700, 325), (50, 550), (700, 550)]
-            return
-
-        pos_var_name = "pos_" + str(Flag2Country.pos_count + 1)
-        random_tuple = random.choice(self.pos_list)
-        setattr(self, pos_var_name, random_tuple)
-        self.pos_list.remove(random_tuple)
-        Flag2Country.pos_count += 1
-
-        self.assign_pos()  # Rekursiver Aufruf
-
-    def draw(self, obj):
-        obj.value_generator()
-        obj.assign_pos()
-        while True:
-            DRAW_MOUSE_POS = pygame.mouse.get_pos()
-
-            SCREEN.fill("#353a3c")  # Erschafft Illusion von einem neuen Fenster / #353a3c
-
-            answer_1 = Button_xy_cords(image=self.picked_flags[0], pos=obj.pos_1,
-                                       text_input=None, font=get_font(30),
-                                       base_color="White",
-                                       hovering_color="Light Blue")
-
-            answer_2 = Button_xy_cords(image=None, pos=obj.pos_2,
-                                       text_input=None, font=get_font(30),
-                                       base_color="White",
-                                       hovering_color="Light Blue")
-
-            answer_3 = Button_xy_cords(image=None, pos=obj.pos_3,
-                                       text_input=None, font=get_font(30),
-                                       base_color="White",
-                                       hovering_color="Light Blue")
-
-            answer_4 = Button_xy_cords(image=None, pos=obj.pos_4,
-                                       text_input=None, font=get_font(30),
-                                       base_color="White",
-                                       hovering_color="Light Blue")
-
-            for button in [answer_1, answer_2, answer_3, answer_4]:
-                button.changeColor(DRAW_MOUSE_POS)
-                button.update(SCREEN)
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-
-                pygame.display.update()
 
 
 class Menu_windows:
@@ -601,7 +559,7 @@ class Menu_windows:
 
             MENU_MOUSE_POS = pygame.mouse.get_pos()
 
-            MENU_TEXT = get_font(calculate_font_size(window_width, window_height, 0.12)).render("Name the Game", True,
+            MENU_TEXT = get_font(calculate_font_size(window_width, window_height, 0.09)).render("Name the Game", True,
                                                                                                 "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
@@ -659,7 +617,7 @@ class Menu_windows:
             MOUSE_POS = pygame.mouse.get_pos()
             SCREEN.blit(BG, (0, 0))
 
-            MENU_TEXT = get_font(calculate_font_size(window_width, window_height, 0.09)).render("RESUME AN OLD GAME",
+            MENU_TEXT = get_font(calculate_font_size(window_width, window_height, 0.09)).render("RESUME A GAME",
                                                                                                 True, "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
@@ -718,7 +676,7 @@ class Menu_windows:
 
     def saved_games_menu(self):
         BG_header_img = pygame.image.load("assets/Background-heading.jpg")
-        BG_header = pygame.transform.scale(BG_header_img, (window_width, window_height/4.431))
+        BG_header = pygame.transform.scale(BG_header_img, (window_width, window_height / 4.431))
 
         scroll_window_width = window_width
         scroll_window_height = window_height * 10
@@ -827,42 +785,7 @@ class Menu_windows:
             clock.tick(target_fps)
 
     def resume_game_options_menu(self):
-        while True:
-            SCREEN.blit(BG, (0, 0))
-
-            MENU_MOUSE_POS = pygame.mouse.get_pos()
-
-            MENU_TEXT = get_font(90).render("OPTIONS", True, "#f1f25f")
-            MENU_RECT = MENU_TEXT.get_rect(center=(640, 100))
-
-            QUIT_BUTTON = Button(image=None, pos=(320, 600),
-                                 text_input="QUIT", font=get_font(60), base_color="White", hovering_color="#dadddd")
-
-            BACK_BUTTON = Button(image=None, pos=(900, 600),
-                                 text_input="BACK", font=get_font(60), base_color="White", hovering_color="#dadddd")
-
-            SCREEN.blit(MENU_TEXT, MENU_RECT)
-
-            for button in [BACK_BUTTON, QUIT_BUTTON]:
-                button.changeColor(MENU_MOUSE_POS)
-                button.update(SCREEN)
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
-                        if BACK_BUTTON.checkForInput(MENU_MOUSE_POS):
-                            CLICK_SOUND.play()
-                            GAME_OBJEKT.new_game_menu()
-                        if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
-                            CLICK_SOUND.play()
-                            pygame.quit()
-                            sys.exit()
-
-            pygame.display.update()
-            clock.tick(target_fps)
+        pass
 
 
 GAME_OBJEKT = Menu_windows()
