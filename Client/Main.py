@@ -525,8 +525,6 @@ class Menu_windows:
                     if event.button == 1:
                         if PLAY_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            # game_obj = Flag2Country()
-                            # game_obj.draw(obj=game_obj)
                             GAME_OBJEKT.create_gamename()
                         if COUNTRY2FLAG_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
@@ -555,8 +553,6 @@ class Menu_windows:
 
         while True:
             SCREEN.blit(BG, (0, 0))
-            # pygame.draw.rect(SCREEN, (95, 95, 95), (280, 300, 520, 60))
-
             MENU_MOUSE_POS = pygame.mouse.get_pos()
 
             MENU_TEXT = get_font(calculate_font_size(window_width, window_height, 0.09)).render("Name the Game", True,
