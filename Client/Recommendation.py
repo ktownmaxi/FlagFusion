@@ -82,6 +82,3 @@ class FlashcardDeck:
         for i in json_files:
             filenames_without_extension.append(i.replace(".json", ""))
         return filenames_without_extension
-
-#             for card in loaded_data:
-#                 self.cards.append(card)

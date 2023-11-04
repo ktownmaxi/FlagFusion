@@ -3,16 +3,17 @@ import threading
 import pickle
 import os
 
-HEADER  = 64
+HEADER = 64
 PORT = 5050
 FORMAT = 'utf-8'
 DISCONNECT_MESSAGE = "!DISCONNECT"
-SERVER = '192.168.178.46'
+SERVER = '172.23.80.1'
 ADDR = (SERVER, PORT)
 game_version = '0.1'
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(ADDR)
+
 
 def send(msg, msg_type):
     global send_msg_type
@@ -61,7 +62,7 @@ def send(msg, msg_type):
             msg_length = len(filename_bytes)
             msg_length_header = f"{msg_length:<{HEADER}}".encode()
             client.send(msg_length_header)
-            client.send(filename_bytes) # Sends the filenames to the server
+            client.send(filename_bytes)  # Sends the filenames to the server
 
             file_path = os.path.join('saves', file)
             with open(file_path, 'r') as reading_file:
@@ -71,7 +72,6 @@ def send(msg, msg_type):
                 msg_length_header = f"{msg_length:<{HEADER}}".encode()
                 client.send(msg_length_header)
                 client.send(data_bytes)  # sends the json file in bytes to the Server
-
 
     if msg_type == 'LoadBackup':
         send_msg_type = str(5).encode()
@@ -99,9 +99,3 @@ def send(msg, msg_type):
     if msg_type == 'Disconnect':
         send_msg_type = str(6).encode()
         client.send(send_msg_type)
-
-
-
-#send(None, 'BackupGames')
-#send(None, 'checkUpdate')
-send(None, 'LoadBackup')

@@ -3,7 +3,7 @@ import threading
 import pickle
 import os
 
-HEADER  = 64
+HEADER = 64
 PORT = 5050
 SERVER = socket.gethostbyname(socket.gethostname())
 ADDR = (SERVER, PORT)
@@ -14,16 +14,17 @@ current_game_version = '0.1'
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(ADDR)
 
+
 def handle_client(conn, addr):
     print(f"New Connection {addr} connected.")
     connected = True
     while connected:
         msg_type = conn.recv(1).decode(FORMAT)
-        if msg_type == '1': # SyncHighscore
+        if msg_type == '1':  # SyncHighscore
             pass
-        if msg_type == '2': # 1v1
+        if msg_type == '2':  # 1v1
             pass
-        if msg_type == '3': # checkUpdate
+        if msg_type == '3':  # checkUpdate
             msg_length_header = conn.recv(HEADER)
             print(msg_length_header)
             msg_length = int(msg_length_header.decode().strip())
@@ -62,7 +63,6 @@ def handle_client(conn, addr):
                 with open(file_path, 'w') as file:
                     file.write(data)
 
-
             else:
                 os.makedirs(directory_path)
                 msg_length_header = conn.recv(HEADER)
@@ -86,7 +86,6 @@ def handle_client(conn, addr):
                 conn.send(element_count)
 
                 for file in os.listdir(directory_path):
-
                     filename_bytes = str(file).encode()
                     msg_length = len(filename_bytes)
                     msg_length_header = f"{msg_length:<{HEADER}}".encode()
@@ -105,7 +104,6 @@ def handle_client(conn, addr):
             else:
                 element_count = str(0).encode()
                 conn.send(element_count)
-
 
         if msg_type == '6':
             connected = False
@@ -131,6 +129,7 @@ def start():
         thread = threading.Thread(target=handle_client, args=(conn, addr))
         thread.start()
         print(f" Active Connections {threading.active_count() - 1}")
+
 
 print("Starting server is starting...!")
 start()

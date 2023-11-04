@@ -1,21 +1,22 @@
+import datetime
+import os
+import random
+import sys
+
 import pycountry
 import pycountry_convert
-import pygame, sys
-from pygame_textinput import TextInputVisualizer, TextInputManager
-from button import Button, Button_xy_cords
-import random
-import os
-import Recommendation
-import datetime
+
 import MusicManager
-import helper
+import Recommendation
+from helper import get_font, calculate_font_size
+from button import *
+import client
 
 pygame.init()
 pygame.mixer.init()
 pygame.mixer.music.set_endevent(pygame.USEREVENT)
 
-# window_width, window_height = 1080, 720
-window_width, window_height = 2560, 1440
+window_width, window_height = 1920, 1080
 
 SCREEN = pygame.display.set_mode((window_width, window_height))
 pygame.display.set_caption("Flags")
@@ -28,6 +29,7 @@ CLICK_SOUND = pygame.mixer.Sound('assets/tones/click.mp3')
 
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
+GRAY = (200, 200, 200)
 
 target_fps = 30
 clock = pygame.time.Clock()
@@ -55,12 +57,8 @@ class Flag2Country():
         self.country_name = ""
         self.countries = pycountry.countries
         self.list_of_countries = []
-        self.list_of_choosen_countries = []  # Liste der random ausgewählten Länder
-        self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
-                         (window_width / 2 + window_width / 15, window_height / 2),
-                         (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
-                         (
-                         window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]  # 4 unten rechts
+        self.list_of_choosen_countries = []
+        self.pos_list = []
         self.picked_flag = ""
         self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
         self.streak = streak
@@ -89,6 +87,10 @@ class Flag2Country():
         return
 
     def value_generator(self):
+        self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
+                         (window_width / 2 + window_width / 15, window_height / 2),
+                         (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
+                         (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
         detect_duplicate_list = []
         self.list_of_choosen_countries.clear()
         self.card = self.country_deck.get_next_value()
@@ -102,9 +104,7 @@ class Flag2Country():
         dupicate = GAME_OBJEKT.detect_duplicates(detect_duplicate_list)
 
         if dupicate:
-            print("Double Detected")
             return True
-
 
     def create_game_deck_generation(self):
         if self.country_deck is not None:
@@ -162,7 +162,6 @@ class Flag2Country():
     def save(self):
         CLICK_SOUND.play()
         self.country_deck.write_to_json(obj=self.country_deck, filename=self.filename)
-        print("saved")
 
     def flag2country_quiz(self):
         GAME_OBJEKT.create_game_deck_generation()
@@ -173,6 +172,7 @@ class Flag2Country():
         self.start_time = None
         self.start_time = pygame.time.get_ticks()
         while True:
+            self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
             DRAW_MOUSE_POS = pygame.mouse.get_pos()
             keys = pygame.key.get_pressed()
 
@@ -201,7 +201,8 @@ class Flag2Country():
 
             answer_4 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_4,
                                        text_input=self.country_name,
-                                       font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)),
+                                       font=helper.get_font(
+                                           helper.calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
@@ -239,35 +240,38 @@ class Flag2Country():
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_1:
-                        if (button_list[3].x_pos, button_list[3].y_pos) == (window_width / 2 - window_width / 2.125, window_height / 2):
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 - window_width / 2.125, window_height / 2):
                             CLICK_SOUND.play()  # Wenn Button 4 oben links (pos1(gedrückte taste)) ist dann -
                             GAME_OBJEKT.right_answer()
                             self.state = "Flag2CountryRightA"
                             return
                     if event.key == pygame.K_2:
-                        if (button_list[3].x_pos, button_list[3].y_pos) == (window_width / 2 + window_width / 15, window_height / 2):
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 + window_width / 15, window_height / 2):
                             CLICK_SOUND.play()
                             GAME_OBJEKT.right_answer()
                             self.state = "Flag2CountryRightA"
                             return
                     if event.key == pygame.K_3:
-                        if (button_list[3].x_pos, button_list[3].y_pos) ==  (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4):
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
                             GAME_OBJEKT.right_answer()
                             self.state = "Flag2CountryRightA"
                             return
                     if event.key == pygame.K_4:
-                        if (button_list[3].x_pos, button_list[3].y_pos) == (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4):
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 + window_width / 15, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
                             GAME_OBJEKT.right_answer()
                             self.state = "Flag2CountryRightA"
                             return
-                    if event.type != pygame.KEYDOWN or event.key in [pygame.K_1, pygame.K_2, pygame.K_3,pygame.K_4]:
+                    if event.type != pygame.KEYDOWN or event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4]:
                         CLICK_SOUND.play()
                         GAME_OBJEKT.wrong_answer()
                         self.state = "Flag2CountryWrongA"
                         return
-
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
@@ -371,7 +375,7 @@ class Flag2Country():
                             self.state = "StartMenu"
                             return
                         if save_button.checkForInput(TRUE_MOUSE_POS):
-                                GAME_OBJEKT.save()
+                            GAME_OBJEKT.save()
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -386,7 +390,8 @@ class Flag2Country():
             heading_rect = heading_text.get_rect(center=(window_width / 2, window_height / 9))
             SCREEN.blit(heading_text, heading_rect)
 
-            correct_country_text = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.04)).render(
+            correct_country_text = helper.get_font(
+                helper.calculate_font_size(window_width, window_height, 0.04)).render(
                 self.country_name, True, "Green")
             correct_country_rect = correct_country_text.get_rect(
                 center=(window_width / 2 + window_width / 3, window_height / 2))
@@ -445,11 +450,11 @@ class Flag2Country():
                             self.state = "PlayFlag2Country"
                             return
                         if menu_button.checkForInput(FALSE_MOUSE_POS):
-                                CLICK_SOUND.play()
-                                self.state = "StartMenu"
-                                return
+                            CLICK_SOUND.play()
+                            self.state = "StartMenu"
+                            return
                         if save_button.checkForInput(FALSE_MOUSE_POS):
-                                GAME_OBJEKT.save()
+                            GAME_OBJEKT.save()
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -460,8 +465,9 @@ class Flag2Country():
 
             MENU_MOUSE_POS = pygame.mouse.get_pos()
 
-            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render("MAIN MENU", True,
-                                                                                                "#f1f25f")
+            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
+                "MAIN MENU", True,
+                "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
             NEWGAME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
@@ -473,14 +479,21 @@ class Flag2Country():
                                    font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)),
                                    base_color="White",
                                    hovering_color="#dadddd")
-            QUIT_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 3.75),
+            QUIT_BUTTON = Button(image=None,
+                                 pos=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 3.25),
                                  text_input="QUIT",
-                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)),
+                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.08)),
                                  base_color="White", hovering_color="#dadddd")
+            SETTINGS_BUTTON = Button(image=None, pos=(
+                window_width / 2 + window_width / 4, window_height / 2 + window_height / 3.25),
+                                     text_input="SETTINGS",
+                                     font=helper.get_font(
+                                         helper.calculate_font_size(window_width, window_height, 0.08)),
+                                     base_color="White", hovering_color="#dadddd")
 
             SCREEN.blit(MENU_TEXT, MENU_RECT)
 
-            for button in [NEWGAME_BUTTON, RESUME_BUTTOM, QUIT_BUTTON]:
+            for button in [NEWGAME_BUTTON, RESUME_BUTTOM, QUIT_BUTTON, SETTINGS_BUTTON]:
                 button.changeColor(MENU_MOUSE_POS)
                 button.update(SCREEN)
 
@@ -497,6 +510,10 @@ class Flag2Country():
                         if RESUME_BUTTOM.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
                             self.state = "ResumeGameMenu"
+                            return
+                        if SETTINGS_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            self.state = "SettingsMenu"
                             return
                         if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
@@ -520,12 +537,14 @@ class Flag2Country():
 
             FLAG2COUNTRY_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
                                          text_input="Flag2Country",
-                                         font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
+                                         font=helper.get_font(
+                                             helper.calculate_font_size(window_width, window_height, 0.07)),
                                          base_color="White",
                                          hovering_color="#dadddd")
             COUNTRY2FLAG_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 14),
                                          text_input="Country2Flag",
-                                         font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
+                                         font=helper.get_font(
+                                             helper.calculate_font_size(window_width, window_height, 0.07)),
                                          base_color="White",
                                          hovering_color="#dadddd")
             QUIT_BUTTON = Button(image=None,
@@ -570,22 +589,19 @@ class Flag2Country():
             clock.tick(target_fps)
 
     def create_gamename(self):
-        manager = TextInputManager(validator=lambda input: len(input) <= 15)
-        font = pygame.font.SysFont("Consolas", helper.calculate_font_size(window_width, window_height, 0.07))
-        textinput_custom = TextInputVisualizer(manager=manager, font_object=font)
-        textinput_custom.cursor_width = 2
-        textinput_custom.cursor_blink_interval = 400  # ms
-        textinput_custom.antialias = False
-        textinput_custom.font_color = (0, 0, 0)
-
-        text_input = None
+        input_rect = pygame.Rect(window_width / 2 - window_width / 2.25, window_height / 2, window_width / 1.125,
+                                 helper.calculate_font_size(window_width, window_height, 0.07) * 1.2)
+        input_text = ""
+        input_color = GRAY
+        active = False
 
         while True:
             SCREEN.blit(BG, (0, 0))
             MENU_MOUSE_POS = pygame.mouse.get_pos()
 
-            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)).render("Name the Game", True,
-                                                                                                "#f1f25f")
+            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)).render(
+                "Name the Game", True,
+                "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
             CONFIRM_BUTTON = Button(image=None,
@@ -603,9 +619,6 @@ class Flag2Country():
             SCREEN.blit(MENU_TEXT, MENU_RECT)
 
             event = pygame.event.get()
-            textinput_custom.update(event)
-            SCREEN.blit(textinput_custom.surface, (window_width / 2 - window_width / 7, window_height / 2))
-
             for button in [CONFIRM_BUTTON, BACK_BUTTON]:
                 button.changeColor(MENU_MOUSE_POS)
                 button.update(SCREEN)
@@ -614,38 +627,61 @@ class Flag2Country():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_KP_ENTER:
-                        CLICK_SOUND.play()
-                        text_input = textinput_custom.value
-                    if event.key == pygame.K_RETURN:
-                        CLICK_SOUND.play()
-                        text_input = textinput_custom.value
 
-                if event.type == pygame.MOUSEBUTTONDOWN:
+                elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if CONFIRM_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            text_input = textinput_custom.value
+                            text_input = input_text
                             text_input = text_input + ".json"
                             self.filename = text_input
                             self.state = "PlayFlag2Country"
                             return
-                        if BACK_BUTTON.checkForInput(MENU_MOUSE_POS):
+                        elif BACK_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
                             self.state = "NewGameMenu"
                             return
+                        elif input_rect.collidepoint(event.pos):
+                            active = not active
+                        else:
+                            active = False
+                        input_color = WHITE if active else GRAY
 
-            pygame.display.update()
-            clock.tick(target_fps)
+                elif event.type == pygame.KEYDOWN:
+                    if active:
+                        if event.key == pygame.K_RETURN:
+                            CLICK_SOUND.play()
+                            text_input = input_text
+                            text_input = text_input + ".json"
+                            self.filename = text_input
+                            self.state = "PlayFlag2Country"
+                            return
+                        elif event.key == pygame.K_BACKSPACE:
+                            input_text = input_text[:-1]
+                        else:
+                            if len(input_text) < 15:
+                                input_text += event.unicode
+                            else:
+                                pass
+
+                pygame.draw.rect(SCREEN, input_color, input_rect, 0)
+                pygame.draw.rect(SCREEN, BLACK, input_rect, 2)
+
+                text_surface = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)).render(
+                    input_text, True, BLACK)
+                SCREEN.blit(text_surface, (input_rect.x + 10, input_rect.y + 10))
+
+                pygame.display.update()
+                clock.tick(target_fps)
 
     def resume_game_menu(self):
         while True:
             MOUSE_POS = pygame.mouse.get_pos()
             SCREEN.blit(BG, (0, 0))
 
-            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)).render("RESUME A GAME",
-                                                                                                              True, "#f1f25f")
+            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)).render(
+                "RESUME A GAME",
+                True, "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
             QUIT_BUTTON = Button(image=None,
@@ -703,6 +739,126 @@ class Flag2Country():
             pygame.display.update()
             clock.tick(target_fps)
 
+    def settings_menu(self):
+        global SCREEN, window_height, window_width, BG
+        state = False
+        UPLOAD_IMG = pygame.image.load("assets/send_backup_icon.png")
+        UPLOAD_TR = pygame.transform.scale(UPLOAD_IMG, (window_width / 8, window_height / 6))
+        LOAD_IMG = pygame.image.load("assets/get_backup_icon.png")
+        LOAD_TR = pygame.transform.scale(LOAD_IMG, (window_width / 8, window_height / 6))
+
+        while True:
+            MOUSE_POS = pygame.mouse.get_pos()
+            SCREEN.fill("#353a3c")
+
+            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)).render(
+                "SETTINGS",
+                True, "#f1f25f")
+            MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
+
+            WINDOW_SIZE_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
+                "WINDOW SIZE:",
+                True, "White")
+            WINDOW_SIZE_RECT = WINDOW_SIZE_TEXT.get_rect(
+                center=(window_width / 2 - window_width / 4, window_height / 2 - window_height / 4))
+
+            SEND_BACKUP_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
+                "SAVE BACKUP:",
+                True, "White")
+            SEND_BACKUP_TEXT_RECT = SEND_BACKUP_TEXT.get_rect(
+                center=(window_width / 2 - window_width / 4, window_height / 2 - window_height / 8))
+
+            LOAD_BACKUP_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
+                "LOAD BACKUP:",
+                True, "White")
+            LOAD_BACKUP_TEXT_RECT = LOAD_BACKUP_TEXT.get_rect(
+                center=(window_width / 2 - window_width / 4, window_height / 2))
+
+            SAVE_BUTTON = Button(image=None,
+                                 pos=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 3),
+                                 text_input="SAVE",
+                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
+                                 base_color="White", hovering_color="#dadddd")
+
+            BACK_BUTTON = Button(image=None,
+                                 pos=(window_width / 2 + window_width / 4, window_height / 2 + window_height / 3),
+                                 text_input="BACK",
+                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
+                                 base_color="White", hovering_color="#dadddd")
+
+            WINDOWSIZE_DROPDOWN = DropDownMenu(image=None, pos=(
+                window_width / 1.4, window_height / 2 - window_height / 4), text_input="SIZES",
+                                               dropdown_options=["FULL SCREEN", "1920 x 1080", "2560 x 1440",
+                                                                 "4096 x 2304"],
+                                               font=helper.get_font(
+                                                   helper.calculate_font_size(window_width, window_height, 0.05)),
+                                               base_color="White", hovering_color="#dadddd")
+            SEND_BACKUP_BUTTON = ImageButton(UPLOAD_TR, (window_width / 1.4, window_height / 2 - window_height / 8),
+                                             UPLOAD_TR)
+            LOAD_BACKUP_BUTTON = ImageButton(LOAD_TR, (window_width / 1.4, window_height / 2),
+                                             LOAD_TR)
+
+            SCREEN.blit(MENU_TEXT, MENU_RECT)
+            SCREEN.blit(WINDOW_SIZE_TEXT, WINDOW_SIZE_RECT)
+            SCREEN.blit(SEND_BACKUP_TEXT, SEND_BACKUP_TEXT_RECT)
+            SCREEN.blit(LOAD_BACKUP_TEXT, LOAD_BACKUP_TEXT_RECT)
+
+            for image_button in [SEND_BACKUP_BUTTON, LOAD_BACKUP_BUTTON]:
+                image_button.update(SCREEN)
+
+            for button in [SAVE_BUTTON, BACK_BUTTON, WINDOWSIZE_DROPDOWN]:
+                button.changeColor(MOUSE_POS)
+                button.update(SCREEN)
+
+            if state:
+                WINDOWSIZE_DROPDOWN.draw_dropdown(SCREEN, window_width, window_height, 0.05, MOUSE_POS)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if BACK_BUTTON.checkForInput(MOUSE_POS):
+                            CLICK_SOUND.play()
+                            self.state = "StartMenu"
+                            return
+                        elif SAVE_BUTTON.checkForInput(MOUSE_POS):
+                            CLICK_SOUND.play()
+                        elif SEND_BACKUP_BUTTON.checkForInput(MOUSE_POS):
+                            CLICK_SOUND.play()
+                            client.send(None, "BackupGames")
+                        elif LOAD_BACKUP_BUTTON.checkForInput(MOUSE_POS):
+                            CLICK_SOUND.play()
+                            client.send(None, "LoadBackup")
+                        elif WINDOWSIZE_DROPDOWN.checkForInput(MOUSE_POS):
+                            if state:
+                                state = False
+                            else:
+                                state = True
+                        elif state:
+                            selected_options = WINDOWSIZE_DROPDOWN.check_dropdown(MOUSE_POS)
+                            if selected_options:
+                                if selected_options == "FULL SCREEN":
+                                    SCREEN = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                                    BG = pygame.transform.scale(BG_img, (SCREEN.get_width(), SCREEN.get_height()))
+                                    window_width, window_height = SCREEN.get_width(), SCREEN.get_height()
+                                elif selected_options == "1920 x 1080":
+                                    window_width, window_height = 1920, 1080
+                                    BG = pygame.transform.scale(BG_img, (window_width, window_height))
+                                    SCREEN = pygame.display.set_mode((window_width, window_height))
+                                elif selected_options == "2560 x 1440":
+                                    window_width, window_height = 2560, 1440
+                                    BG = pygame.transform.scale(BG_img, (window_width, window_height))
+                                    SCREEN = pygame.display.set_mode((window_width, window_height))
+                                elif selected_options == "4096 x 2304":
+                                    window_width, window_height = 4096, 2304
+                                    BG = pygame.transform.scale(BG_img, (window_width, window_height))
+                                    SCREEN = pygame.display.set_mode((window_width, window_height))
+
+            pygame.display.update()
+            clock.tick(target_fps)
+
     def saved_games_menu(self):
         BG_header_img = pygame.image.load("assets/Background-heading.jpg")
         BG_header = pygame.transform.scale(BG_header_img, (window_width, window_height / 4.431))
@@ -723,7 +879,8 @@ class Flag2Country():
 
         for button in game_buttons:
             button_pos.append((relativ_x, relativ_y))
-            relativ_y += helper.calculate_font_size(window_width, window_height, 0.07) * 1.5  # Spacing zwischen den Zeilen
+            relativ_y += helper.calculate_font_size(window_width, window_height,
+                                                    0.07) * 1.5  # Spacing zwischen den Zeilen
 
         while True:
             MOUSE_POS = pygame.mouse.get_pos()
@@ -740,7 +897,8 @@ class Flag2Country():
                     setattr(self, pos_var_name, Button(image=None, pos=(relativ_x, y - self.scroll_y),
                                                        text_input=game_buttons[count],
                                                        font=helper.get_font(
-                                                           helper.calculate_font_size(window_width, window_height, 0.07)),
+                                                           helper.calculate_font_size(window_width, window_height,
+                                                                                      0.07)),
                                                        base_color="White", hovering_color="#dadddd"))
 
                     button_instance = getattr(self, pos_var_name)
@@ -755,8 +913,9 @@ class Flag2Country():
             self.scroll_x = max(0, min(self.scroll_x, scroll_window_width - window_width))
             self.scroll_y = max(0, min(self.scroll_y, scroll_window_height - window_height))
 
-            HEADING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render("SAVED GAMES", True,
-                                                                                                   "#f1f25f")
+            HEADING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
+                "SAVED GAMES", True,
+                "#f1f25f")
             HEADING_RECT = HEADING_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
             BACK_BUTTON = Button(image=None,
@@ -828,6 +987,8 @@ def mainloop():
             GAME_OBJEKT.resume_game_menu()
         elif GAME_OBJEKT.state == "SavedGamesMenu":
             GAME_OBJEKT.saved_games_menu()
+        elif GAME_OBJEKT.state == "SettingsMenu":
+            GAME_OBJEKT.settings_menu()
         elif GAME_OBJEKT.state == "PlayFlag2Country":
             GAME_OBJEKT.flag2country_quiz()
         elif GAME_OBJEKT.state == "Flag2CountryWrongA":
