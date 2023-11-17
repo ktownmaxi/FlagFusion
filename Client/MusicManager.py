@@ -4,7 +4,8 @@ import os
 
 class MusicManager:
 
-    def get_song_list(self, song_path):
+    @staticmethod
+    def get_song_list(song_path):
         list_of_songs = os.listdir(song_path)
         return list_of_songs
 

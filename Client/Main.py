@@ -1,6 +1,7 @@
 import datetime
 import os
 import random
+import socket
 import sys
 
 import pycountry
@@ -8,9 +9,7 @@ import pycountry_convert
 
 import MusicManager
 import Recommendation
-from helper import get_font, calculate_font_size
 from button import *
-import client
 
 pygame.init()
 pygame.mixer.init()
@@ -19,7 +18,7 @@ pygame.mixer.music.set_endevent(pygame.USEREVENT)
 window_width, window_height = 1920, 1080
 
 SCREEN = pygame.display.set_mode((window_width, window_height))
-pygame.display.set_caption("Flags")
+pygame.display.set_caption("Flag Quest")
 
 BG_img = pygame.image.load("assets/Background.jpg")
 BG = pygame.transform.scale(BG_img, (window_width, window_height))
@@ -30,8 +29,10 @@ CLICK_SOUND = pygame.mixer.Sound('assets/tones/click.mp3')
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 GRAY = (200, 200, 200)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
 
-target_fps = 30
+target_fps = 120
 clock = pygame.time.Clock()
 
 music_manager_obj = MusicManager.MusicManager()
@@ -41,7 +42,7 @@ pygame.mixer.music.set_volume(0.0)
 pygame.mixer.music.play()
 
 
-class Flag2Country():
+class Flag2Country:
     pos_count = 0
     correct_sound = pygame.mixer.Sound("assets/tones/correct.mp3")
     incorrect_sound = pygame.mixer.Sound("assets/tones/wrong.mp3")
@@ -50,26 +51,27 @@ class Flag2Country():
     start_time = None
     elapsed_time = 0
 
-    def __init__(self, gameversion=str(0.1), country_deck=None, streak=0,
+    def __init__(self, game_version=str(0.1), country_deck=None, streak=0,
                  filename=f"Gamesave_ID_1{formatted_datetime}.json", scroll_x=0, scroll_y=0, scroll_speed=10):
         self.state = "StartMenu"
         self.country_deck = country_deck
         self.country_name = ""
         self.countries = pycountry.countries
         self.list_of_countries = []
-        self.list_of_choosen_countries = []
+        self.list_of_chosen_countries = []
         self.pos_list = []
         self.picked_flag = ""
         self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
         self.streak = streak
         self.card = None
         self.filename = filename
-        self.game_version = gameversion
+        self.game_version = game_version
         self.scroll_x = scroll_x
         self.scroll_y = scroll_y
         self.scroll_speed = scroll_speed
 
-    def detect_duplicates(self, my_list):
+    @staticmethod
+    def detect_duplicates(my_list):
         duplicates = False
         for value in my_list:
             if my_list.count(value) > 1:
@@ -92,18 +94,18 @@ class Flag2Country():
                          (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
                          (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
         detect_duplicate_list = []
-        self.list_of_choosen_countries.clear()
+        self.list_of_chosen_countries.clear()
         self.card = self.country_deck.get_next_value()
         self.picked_flag = self.card.value[1]
         self.country_name = self.card.value[0]
 
         for i in range(0, 3):
             cache = self.country_deck.get_random_card()
-            self.list_of_choosen_countries.append(
+            self.list_of_chosen_countries.append(
                 cache.value[0])  # Wählt 3 random Items aus dieser Liste aus und fügt sie einer anderen an
-        dupicate = GAME_OBJEKT.detect_duplicates(detect_duplicate_list)
+        duplicate = GAME_OBJEKT.detect_duplicates(detect_duplicate_list)
 
-        if dupicate:
+        if duplicate:
             return True
 
     def create_game_deck_generation(self):
@@ -174,26 +176,25 @@ class Flag2Country():
         while True:
             self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
             DRAW_MOUSE_POS = pygame.mouse.get_pos()
-            keys = pygame.key.get_pressed()
 
             SCREEN.fill("#353a3c")
 
             answer_1 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_1,
-                                       text_input=self.list_of_choosen_countries[0],
+                                       text_input=self.list_of_chosen_countries[0],
                                        font=helper.get_font(
                                            helper.calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
             answer_2 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_2,
-                                       text_input=self.list_of_choosen_countries[1],
+                                       text_input=self.list_of_chosen_countries[1],
                                        font=helper.get_font(
                                            helper.calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
             answer_3 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_3,
-                                       text_input=self.list_of_choosen_countries[2],
+                                       text_input=self.list_of_chosen_countries[2],
                                        font=helper.get_font(
                                            helper.calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
@@ -470,11 +471,12 @@ class Flag2Country():
                 "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
-            NEWGAME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
-                                    text_input="New Game",
-                                    font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)),
-                                    base_color="White", hovering_color="#dadddd")
-            RESUME_BUTTOM = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 14),
+            NEW_GAME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
+                                     text_input="New Game",
+                                     font=helper.get_font(
+                                         helper.calculate_font_size(window_width, window_height, 0.09)),
+                                     base_color="White", hovering_color="#dadddd")
+            RESUME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 14),
                                    text_input="Resume",
                                    font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)),
                                    base_color="White",
@@ -493,7 +495,7 @@ class Flag2Country():
 
             SCREEN.blit(MENU_TEXT, MENU_RECT)
 
-            for button in [NEWGAME_BUTTON, RESUME_BUTTOM, QUIT_BUTTON, SETTINGS_BUTTON]:
+            for button in [NEW_GAME_BUTTON, RESUME_BUTTON, QUIT_BUTTON, SETTINGS_BUTTON]:
                 button.changeColor(MENU_MOUSE_POS)
                 button.update(SCREEN)
 
@@ -503,11 +505,11 @@ class Flag2Country():
                     sys.exit()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if NEWGAME_BUTTON.checkForInput(MENU_MOUSE_POS):
+                        if NEW_GAME_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
                             self.state = "NewGameMenu"
                             return
-                        if RESUME_BUTTOM.checkForInput(MENU_MOUSE_POS):
+                        if RESUME_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
                             self.state = "ResumeGameMenu"
                             return
@@ -588,7 +590,7 @@ class Flag2Country():
             pygame.display.update()
             clock.tick(target_fps)
 
-    def create_gamename(self):
+    def create_game_name(self):
         input_rect = pygame.Rect(window_width / 2 - window_width / 2.25, window_height / 2, window_width / 1.125,
                                  helper.calculate_font_size(window_width, window_height, 0.07) * 1.2)
         input_text = ""
@@ -740,12 +742,24 @@ class Flag2Country():
             clock.tick(target_fps)
 
     def settings_menu(self):
-        global SCREEN, window_height, window_width, BG
-        state = False
+        server_connection_state = False
+        try:
+            import client
+            server_connection_state = True
+        except ConnectionRefusedError:
+            print("Server refused the connection")
+            server_connection_state = False
+        global SCREEN, window_height, window_width, BG, target_fps
+        Window_size_dropdown_state = False
+        FPS_dropdown_state = False
         UPLOAD_IMG = pygame.image.load("assets/send_backup_icon.png")
         UPLOAD_TR = pygame.transform.scale(UPLOAD_IMG, (window_width / 8, window_height / 6))
         LOAD_IMG = pygame.image.load("assets/get_backup_icon.png")
         LOAD_TR = pygame.transform.scale(LOAD_IMG, (window_width / 8, window_height / 6))
+
+        MUSIK_VOLUME_BAR = DraggableBar((window_width / 1.4, window_height / 2 + window_height / 8), (400, 30))
+
+        start_time = pygame.time.get_ticks()
 
         while True:
             MOUSE_POS = pygame.mouse.get_pos()
@@ -760,101 +774,190 @@ class Flag2Country():
                 "WINDOW SIZE:",
                 True, "White")
             WINDOW_SIZE_RECT = WINDOW_SIZE_TEXT.get_rect(
-                center=(window_width / 2 - window_width / 4, window_height / 2 - window_height / 4))
+                center=(window_width / 2 - window_width / 4, window_height / 2 - window_height / 4 - self.scroll_y))
 
             SEND_BACKUP_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
                 "SAVE BACKUP:",
                 True, "White")
             SEND_BACKUP_TEXT_RECT = SEND_BACKUP_TEXT.get_rect(
-                center=(window_width / 2 - window_width / 4, window_height / 2 - window_height / 8))
+                center=(window_width / 2 - window_width / 4, window_height / 2 - window_height / 8 - self.scroll_y))
 
             LOAD_BACKUP_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
                 "LOAD BACKUP:",
                 True, "White")
             LOAD_BACKUP_TEXT_RECT = LOAD_BACKUP_TEXT.get_rect(
-                center=(window_width / 2 - window_width / 4, window_height / 2))
+                center=(window_width / 2 - window_width / 4, window_height / 2 - self.scroll_y))
+
+            MUSIC_VOLUME_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
+                "MUSIC VOLUME:",
+                True, "White")
+            MUSIC_VOLUME_TEXT_RECT = MUSIC_VOLUME_TEXT.get_rect(
+                center=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 8 - self.scroll_y))
+
+            FPS_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
+                "TARGET FPS:",
+                True, "White")
+            FPS_TEXT_RECT = FPS_TEXT.get_rect(
+                center=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 4 - self.scroll_y))
 
             SAVE_BUTTON = Button(image=None,
-                                 pos=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 3),
+                                 pos=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 2.75),
                                  text_input="SAVE",
                                  font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
                                  base_color="White", hovering_color="#dadddd")
 
             BACK_BUTTON = Button(image=None,
-                                 pos=(window_width / 2 + window_width / 4, window_height / 2 + window_height / 3),
+                                 pos=(window_width / 2 + window_width / 4, window_height / 2 + window_height / 2.75),
                                  text_input="BACK",
                                  font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
                                  base_color="White", hovering_color="#dadddd")
 
-            WINDOWSIZE_DROPDOWN = DropDownMenu(image=None, pos=(
-                window_width / 1.4, window_height / 2 - window_height / 4), text_input="SIZES",
-                                               dropdown_options=["FULL SCREEN", "1920 x 1080", "2560 x 1440",
-                                                                 "4096 x 2304"],
-                                               font=helper.get_font(
-                                                   helper.calculate_font_size(window_width, window_height, 0.05)),
-                                               base_color="White", hovering_color="#dadddd")
-            SEND_BACKUP_BUTTON = ImageButton(UPLOAD_TR, (window_width / 1.4, window_height / 2 - window_height / 8),
+            WINDOW_SIZE_DROPDOWN = DropDownMenu(image=None, pos=(
+                window_width / 1.4, window_height / 2 - window_height / 4 - self.scroll_y), text_input="SIZES",
+                                                dropdown_options=["FULL SCREEN", "1920 x 1080", "2560 x 1440",
+                                                                  "4096 x 2304"],
+                                                font=helper.get_font(
+                                                    helper.calculate_font_size(window_width, window_height, 0.05)),
+                                                base_color="White", hovering_color="#dadddd")
+            FPS_DROPDOWN = DropDownMenu(image=None, pos=(
+                window_width / 2 + window_width / 4, window_height / 2 + window_height / 4 - self.scroll_y), text_input="FPS",
+                                        dropdown_options=["30", "60", "144"],
+                                        font=helper.get_font(
+                                            helper.calculate_font_size(window_width, window_height, 0.05)),
+                                        base_color="White", hovering_color="#dadddd")
+
+            SEND_BACKUP_BUTTON = ImageButton(UPLOAD_TR, (
+                window_width / 1.4, window_height / 2 - window_height / 8 - self.scroll_y),
                                              UPLOAD_TR)
-            LOAD_BACKUP_BUTTON = ImageButton(LOAD_TR, (window_width / 1.4, window_height / 2),
+            LOAD_BACKUP_BUTTON = ImageButton(LOAD_TR, (window_width / 1.4, window_height / 2 - self.scroll_y),
                                              LOAD_TR)
 
-            SCREEN.blit(MENU_TEXT, MENU_RECT)
+            MUSIK_VOLUME_BAR.bar_y = window_height / 2 + window_height / 8 - self.scroll_y
+
             SCREEN.blit(WINDOW_SIZE_TEXT, WINDOW_SIZE_RECT)
             SCREEN.blit(SEND_BACKUP_TEXT, SEND_BACKUP_TEXT_RECT)
             SCREEN.blit(LOAD_BACKUP_TEXT, LOAD_BACKUP_TEXT_RECT)
+            SCREEN.blit(MUSIC_VOLUME_TEXT, MUSIC_VOLUME_TEXT_RECT)
+            SCREEN.blit(FPS_TEXT, FPS_TEXT_RECT)
+
+            MUSIK_VOLUME_BAR.update(SCREEN, GRAY, GREEN)
+            if pygame.mouse.get_pressed()[0]:
+                if MUSIK_VOLUME_BAR.checkForInput(MOUSE_POS):
+                    MUSIK_VOLUME_BAR.setbar(MOUSE_POS, window_width)
+                    pygame.mixer.music.set_volume(MUSIK_VOLUME_BAR.get_volume())
+
+            for button in [WINDOW_SIZE_DROPDOWN, FPS_DROPDOWN]:
+                button.changeColor(MOUSE_POS)
+                button.update(SCREEN)
+
+            if Window_size_dropdown_state:
+                WINDOW_SIZE_DROPDOWN.draw_dropdown(SCREEN, 0.05, MOUSE_POS)
+
+            if FPS_dropdown_state:
+                FPS_DROPDOWN.draw_dropdown(SCREEN, 0.05, MOUSE_POS)
 
             for image_button in [SEND_BACKUP_BUTTON, LOAD_BACKUP_BUTTON]:
                 image_button.update(SCREEN)
 
-            for button in [SAVE_BUTTON, BACK_BUTTON, WINDOWSIZE_DROPDOWN]:
+            pygame.draw.rect(SCREEN, (53, 58, 60), (0, 0, window_width, window_height / 5))
+            pygame.draw.rect(SCREEN, (53, 58, 60), (0, window_height - window_height / 5,
+                                                    window_width, window_height / 5))
+            SCREEN.blit(MENU_TEXT, MENU_RECT)
+
+            for button in [SAVE_BUTTON, BACK_BUTTON]:
                 button.changeColor(MOUSE_POS)
                 button.update(SCREEN)
 
-            if state:
-                WINDOWSIZE_DROPDOWN.draw_dropdown(SCREEN, window_width, window_height, 0.05, MOUSE_POS)
+            current_time = pygame.time.get_ticks()
+
+            if current_time - start_time < 4500 and server_connection_state is False:
+                WARNING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
+                    "SERVER REFUSED THE CONNECTION",
+                    True, RED)
+                WARNING_RECT = WARNING_TEXT.get_rect(center=(window_width / 2, window_height / 2))
+
+                SCREEN.blit(WARNING_TEXT, WARNING_RECT)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
+                    if event.button == 4:  # Mausrad nach oben
+                        self.scroll_y -= self.scroll_speed * 2
+                    elif event.button == 5:  # Mausrad nach unten
+                        self.scroll_y += self.scroll_speed * 2
+                    elif event.button == 1:
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
                             self.state = "StartMenu"
                             return
+
                         elif SAVE_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                        elif SEND_BACKUP_BUTTON.checkForInput(MOUSE_POS):
-                            CLICK_SOUND.play()
-                            client.send(None, "BackupGames")
-                        elif LOAD_BACKUP_BUTTON.checkForInput(MOUSE_POS):
-                            CLICK_SOUND.play()
-                            client.send(None, "LoadBackup")
-                        elif WINDOWSIZE_DROPDOWN.checkForInput(MOUSE_POS):
-                            if state:
-                                state = False
+                        try:
+                            if SEND_BACKUP_BUTTON.checkForInput(MOUSE_POS):
+                                if server_connection_state is not False:
+                                    CLICK_SOUND.play()
+                                    client.send("BackupGames")
+                                else:
+                                    start_time = pygame.time.get_ticks()
+                            elif LOAD_BACKUP_BUTTON.checkForInput(MOUSE_POS):
+                                if server_connection_state is not False:
+                                    CLICK_SOUND.play()
+                                    client.send("LoadBackup")
+                                else:
+                                    start_time = pygame.time.get_ticks()
+                        except socket.error:
+                            print("A Error with the network occurred")
+
+                        if WINDOW_SIZE_DROPDOWN.checkForInput(MOUSE_POS):
+                            if Window_size_dropdown_state:
+                                Window_size_dropdown_state = False
                             else:
-                                state = True
-                        elif state:
-                            selected_options = WINDOWSIZE_DROPDOWN.check_dropdown(MOUSE_POS)
+                                Window_size_dropdown_state = True
+                        elif Window_size_dropdown_state:
+                            selected_options = WINDOW_SIZE_DROPDOWN.check_dropdown(MOUSE_POS)
+                            print(selected_options)
                             if selected_options:
                                 if selected_options == "FULL SCREEN":
                                     SCREEN = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
                                     BG = pygame.transform.scale(BG_img, (SCREEN.get_width(), SCREEN.get_height()))
                                     window_width, window_height = SCREEN.get_width(), SCREEN.get_height()
+                                    CLICK_SOUND.play()
                                 elif selected_options == "1920 x 1080":
                                     window_width, window_height = 1920, 1080
                                     BG = pygame.transform.scale(BG_img, (window_width, window_height))
                                     SCREEN = pygame.display.set_mode((window_width, window_height))
+                                    CLICK_SOUND.play()
                                 elif selected_options == "2560 x 1440":
                                     window_width, window_height = 2560, 1440
                                     BG = pygame.transform.scale(BG_img, (window_width, window_height))
                                     SCREEN = pygame.display.set_mode((window_width, window_height))
+                                    CLICK_SOUND.play()
                                 elif selected_options == "4096 x 2304":
                                     window_width, window_height = 4096, 2304
                                     BG = pygame.transform.scale(BG_img, (window_width, window_height))
                                     SCREEN = pygame.display.set_mode((window_width, window_height))
+                                    CLICK_SOUND.play()
+
+                        if FPS_DROPDOWN.checkForInput(MOUSE_POS):
+                            if FPS_dropdown_state:
+                                FPS_dropdown_state = False
+                            else:
+                                FPS_dropdown_state = True
+                        elif FPS_dropdown_state:
+                            selected_options = FPS_DROPDOWN.check_dropdown(MOUSE_POS)
+                            if selected_options:
+                                if selected_options == "30":
+                                    CLICK_SOUND.play()
+                                    target_fps = 30
+                                elif selected_options == "´60":
+                                    CLICK_SOUND.play()
+                                    target_fps = 60
+                                elif selected_options == "144":
+                                    CLICK_SOUND.play()
+                                    target_fps = 144
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -865,19 +968,16 @@ class Flag2Country():
 
         scroll_window_width = window_width
         scroll_window_height = window_height * 10
-        count = 0
         relativ_x = window_width / 2
         relativ_y = window_height / 2 - window_height / 6
 
         CARD_DECK_OBJEKT = Recommendation.FlashcardDeck()
         game_buttons = CARD_DECK_OBJEKT.get_json_names()
 
-        content_surface = pygame.Surface((scroll_window_width, scroll_window_height), pygame.SRCALPHA)
-
         button_obj_list = []
         button_pos = []
 
-        for button in game_buttons:
+        for _ in game_buttons:
             button_pos.append((relativ_x, relativ_y))
             relativ_y += helper.calculate_font_size(window_width, window_height,
                                                     0.07) * 1.5  # Spacing zwischen den Zeilen
@@ -889,26 +989,18 @@ class Flag2Country():
             button_obj_list.clear()
             for count, text in enumerate(game_buttons):
                 x, y = button_pos[count]
-                if count >= len(game_buttons):  # reset count wenn größer als anzahl buttons
-                    count = 0
-                    continue
-                else:
-                    pos_var_name = "BUTTON" + str(count)  # game_buttons[count]
-                    setattr(self, pos_var_name, Button(image=None, pos=(relativ_x, y - self.scroll_y),
-                                                       text_input=game_buttons[count],
-                                                       font=helper.get_font(
-                                                           helper.calculate_font_size(window_width, window_height,
-                                                                                      0.07)),
-                                                       base_color="White", hovering_color="#dadddd"))
+                pos_var_name = "BUTTON" + str(count)  # game_buttons[count]
+                setattr(self, pos_var_name, Button(image=None, pos=(relativ_x, y - self.scroll_y),
+                                                   text_input=game_buttons[count],
+                                                   font=helper.get_font(
+                                                       helper.calculate_font_size(window_width, window_height,
+                                                                                  0.07)),
+                                                   base_color="White", hovering_color="#dadddd"))
 
-                    button_instance = getattr(self, pos_var_name)
-                    button_obj_list.append(button_instance)
-                    button_instance.changeColor(MOUSE_POS)
-                    button_instance.update(SCREEN)
-                count += 1
-
-            visible_area = pygame.Rect(self.scroll_x, self.scroll_y, window_width, window_height)
-            SCREEN.blit(content_surface, (50, 150), area=visible_area)
+                button_instance = getattr(self, pos_var_name)
+                button_obj_list.append(button_instance)
+                button_instance.changeColor(MOUSE_POS)
+                button_instance.update(SCREEN)
 
             self.scroll_x = max(0, min(self.scroll_x, scroll_window_width - window_width))
             self.scroll_y = max(0, min(self.scroll_y, scroll_window_height - window_height))
@@ -982,7 +1074,7 @@ def mainloop():
         elif GAME_OBJEKT.state == "NewGameMenu":
             GAME_OBJEKT.new_game_menu()
         elif GAME_OBJEKT.state == "CreateGameMenu":
-            GAME_OBJEKT.create_gamename()
+            GAME_OBJEKT.create_game_name()
         elif GAME_OBJEKT.state == "ResumeGameMenu":
             GAME_OBJEKT.resume_game_menu()
         elif GAME_OBJEKT.state == "SavedGamesMenu":

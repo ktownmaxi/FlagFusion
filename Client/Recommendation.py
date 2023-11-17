@@ -2,6 +2,7 @@ import random
 import json
 import os
 
+
 class Flashcard:
     def __init__(self, value, score=50):
         self.value = value
@@ -16,6 +17,7 @@ class Flashcard:
                 self.score = max(self.score - 5, 0)
             else:
                 self.score = min(self.score + 5, 100)
+
 
 class FlashcardDeck:
     def __init__(self):
@@ -35,14 +37,15 @@ class FlashcardDeck:
         return chosen_card
 
     def get_random_card(self):
-        random_number = random.randint(0, len(self.cards) -1)
+        random_number = random.randint(0, len(self.cards) - 1)
         return self.cards[random_number]
 
-
-    def update_card(self, card, wrong, time):
+    @staticmethod
+    def update_card(card, wrong, time):
         card.update_score(wrong, time)
 
-    def flashcard_encoder(self, obj):
+    @staticmethod
+    def flashcard_encoder(obj):
         if isinstance(obj, Flashcard):
             return {
                 "value": obj.value,
@@ -52,7 +55,8 @@ class FlashcardDeck:
             return {"cards": obj.cards}
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
-    def flashcard_decoder(self, json_dict):
+    @staticmethod
+    def flashcard_decoder(json_dict):
         if "cards" in json_dict:
             deck = FlashcardDeck()
             for card_data in json_dict["cards"]:
@@ -74,7 +78,8 @@ class FlashcardDeck:
             loaded_data = json.load(json_file, object_hook=self.flashcard_decoder)
             return loaded_data
 
-    def get_json_names(self):
+    @staticmethod
+    def get_json_names():
         directory = 'saves'
         json_files = [file for file in os.listdir(directory) if file.endswith('.json')]
         filenames_without_extension = []

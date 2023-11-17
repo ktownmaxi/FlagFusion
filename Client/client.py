@@ -1,5 +1,4 @@
 import socket
-import threading
 import pickle
 import os
 
@@ -7,7 +6,7 @@ HEADER = 64
 PORT = 5050
 FORMAT = 'utf-8'
 DISCONNECT_MESSAGE = "!DISCONNECT"
-SERVER = '172.23.80.1'
+SERVER = '192.168.178.45'
 ADDR = (SERVER, PORT)
 game_version = '0.1'
 
@@ -15,7 +14,7 @@ client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(ADDR)
 
 
-def send(msg, msg_type):
+def send(msg_type):
     global send_msg_type
     if msg_type == 'SyncHighscore':
         send_msg_type = str(1).encode()
@@ -29,9 +28,9 @@ def send(msg, msg_type):
         send_msg_type = str(3).encode()
         client.send(send_msg_type)
 
-        game_version_pickle = pickle.dumps(game_version)  # Transforms Gameversion to pickle objekt
+        game_version_pickle = pickle.dumps(game_version)  # Transforms Game version to pickle objekt
         msg_length = len(game_version_pickle)
-        msg_length_header = f"{msg_length:<{HEADER}}".encode()  # Makes msg_lenght into a header
+        msg_length_header = f"{msg_length:<{HEADER}}".encode()  # Makes msg_length into a header
 
         client.send(msg_length_header)
         client.send(game_version_pickle)
