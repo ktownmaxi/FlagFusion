@@ -26,12 +26,11 @@ def handle_client(conn, addr):
             pass
         if msg_type == '3':  # checkUpdate
             msg_length_header = conn.recv(HEADER)
-            print(msg_length_header)
             msg_length = int(msg_length_header.decode().strip())
 
             if msg_length:
-                msg_length = int(msg_length)
                 data = recv_data(conn, msg_length)
+                data = pickle.loads(data)
 
                 if data == current_game_version:
                     update_msg = pickle.dumps(True)
@@ -46,7 +45,7 @@ def handle_client(conn, addr):
                     conn.send(msg_length_header)
                     conn.send(update_msg)
 
-        if msg_type == '4':
+        if msg_type == '4':  # Backup Games
             path = f'backups/{addr[0]}'
             directory_path = os.path.join(os.path.dirname(__file__), path)
 
@@ -77,7 +76,7 @@ def handle_client(conn, addr):
                 with open(file_path, 'w') as file:
                     file.write(data)
 
-        if msg_type == '5':
+        if msg_type == '5':  # Load Games
             path = f'backups/{addr[0]}'
             directory_path = os.path.join(os.path.dirname(__file__), path)
 
@@ -105,8 +104,12 @@ def handle_client(conn, addr):
                 element_count = str(0).encode()
                 conn.send(element_count)
 
-        if msg_type == '6':
+        if msg_type == '6':  # starting 1vs1 mode
+            pass
+
+        if msg_type == '7':
             connected = False
+    print("Connection closed")
     conn.close()
 
 
@@ -115,7 +118,7 @@ def recv_data(conn, msg_length):
     while len(msg) < msg_length:
         chunk = conn.recv(msg_length - len(msg))
         if not chunk:
-            # Verbindung geschlossen oder Daten verloren
+            # Connection closed or data lost
             break
         msg += chunk
     return msg

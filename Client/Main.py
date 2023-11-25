@@ -6,6 +6,7 @@ import sys
 
 import pycountry
 import pycountry_convert
+import pygame.time
 
 import MusicManager
 import Recommendation
@@ -35,6 +36,8 @@ RED = (255, 0, 0)
 target_fps = 120
 clock = pygame.time.Clock()
 
+server_ip = '172.27.32.1'
+
 music_manager_obj = MusicManager.MusicManager()
 next_song = music_manager_obj.get_next_song()
 pygame.mixer.music.load(os.path.join('assets/music', next_song))
@@ -42,6 +45,7 @@ pygame.mixer.music.set_volume(0.0)
 pygame.mixer.music.play()
 
 
+# noinspection PyCompatibility
 class Flag2Country:
     pos_count = 0
     correct_sound = pygame.mixer.Sound("assets/tones/correct.mp3")
@@ -69,6 +73,12 @@ class Flag2Country:
         self.scroll_x = scroll_x
         self.scroll_y = scroll_y
         self.scroll_speed = scroll_speed
+
+    @staticmethod
+    def quit_game(client):
+        client.send('Disconnect')
+        pygame.quit()
+        sys.exit()
 
     @staticmethod
     def detect_duplicates(my_list):
@@ -742,9 +752,10 @@ class Flag2Country:
             clock.tick(target_fps)
 
     def settings_menu(self):
+        import client
         server_connection_state = False
         try:
-            import client
+            client_conn = client.ClientConnection(server_ip)
             server_connection_state = True
         except ConnectionRefusedError:
             print("Server refused the connection")
@@ -812,15 +823,24 @@ class Flag2Country:
                                  font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
                                  base_color="White", hovering_color="#dadddd")
 
+            CHECK_FOR_UPDATE_BUTTON = Button(image=None,
+                                             pos=(window_width / 2,
+                                                  window_height / 2 + window_height / 2.75 - self.scroll_y),
+                                             text_input="CHECK FOR UPDATE",
+                                             font=helper.get_font(
+                                                 helper.calculate_font_size(window_width, window_height, 0.05)),
+                                             base_color="White", hovering_color="#dadddd")
+
             WINDOW_SIZE_DROPDOWN = DropDownMenu(image=None, pos=(
                 window_width / 1.4, window_height / 2 - window_height / 4 - self.scroll_y), text_input="SIZES",
                                                 dropdown_options=["FULL SCREEN", "1920 x 1080", "2560 x 1440",
-                                                                  "4096 x 2304"],
+                                                                   "4096 x 2304"],
                                                 font=helper.get_font(
                                                     helper.calculate_font_size(window_width, window_height, 0.05)),
                                                 base_color="White", hovering_color="#dadddd")
             FPS_DROPDOWN = DropDownMenu(image=None, pos=(
-                window_width / 2 + window_width / 4, window_height / 2 + window_height / 4 - self.scroll_y), text_input="FPS",
+                window_width / 2 + window_width / 4, window_height / 2 + window_height / 4 - self.scroll_y),
+                                        text_input="FPS",
                                         dropdown_options=["30", "60", "144"],
                                         font=helper.get_font(
                                             helper.calculate_font_size(window_width, window_height, 0.05)),
@@ -846,7 +866,7 @@ class Flag2Country:
                     MUSIK_VOLUME_BAR.setbar(MOUSE_POS, window_width)
                     pygame.mixer.music.set_volume(MUSIK_VOLUME_BAR.get_volume())
 
-            for button in [WINDOW_SIZE_DROPDOWN, FPS_DROPDOWN]:
+            for button in [WINDOW_SIZE_DROPDOWN, FPS_DROPDOWN, CHECK_FOR_UPDATE_BUTTON]:
                 button.changeColor(MOUSE_POS)
                 button.update(SCREEN)
 
@@ -891,6 +911,7 @@ class Flag2Country:
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
                             self.state = "StartMenu"
+                            client_conn.send("Disconnect")
                             return
 
                         elif SAVE_BUTTON.checkForInput(MOUSE_POS):
@@ -899,15 +920,22 @@ class Flag2Country:
                             if SEND_BACKUP_BUTTON.checkForInput(MOUSE_POS):
                                 if server_connection_state is not False:
                                     CLICK_SOUND.play()
-                                    client.send("BackupGames")
+                                    client_conn.send("BackupGames")
                                 else:
                                     start_time = pygame.time.get_ticks()
                             elif LOAD_BACKUP_BUTTON.checkForInput(MOUSE_POS):
                                 if server_connection_state is not False:
                                     CLICK_SOUND.play()
-                                    client.send("LoadBackup")
+                                    client_conn.send("LoadBackup")
                                 else:
                                     start_time = pygame.time.get_ticks()
+                            elif CHECK_FOR_UPDATE_BUTTON.checkForInput(MOUSE_POS):
+                                if server_connection_state is not False:
+                                    CLICK_SOUND.play()
+                                    version_up_to_date = client_conn.send('checkUpdate')
+                                else:
+                                    start_time = pygame.time.get_ticks()
+
                         except socket.error:
                             print("A Error with the network occurred")
 
