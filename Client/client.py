@@ -1,23 +1,20 @@
-import socket
-import pickle
 import os
+import pickle
+import socket
 
 HEADER = 64
 FORMAT = 'utf-8'
 DISCONNECT_MESSAGE = "!DISCONNECT"
-# '172.27.32.1'
-game_version = '0.1'
 
-
-# noinspection PyCompatibility
 
 class ClientConnection:
-    def __init__(self, server_ip, port=5050):
+    def __init__(self, server_ip, game_version, port=5050):
         self.SERVER = server_ip
         self.PORT = port
         self.ADDR = (self.SERVER, self.PORT)
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect(self.ADDR)
+        self.game_version = game_version
 
     @staticmethod
     def recv_data(conn, msg_length):
