@@ -36,7 +36,7 @@ RED = (255, 0, 0)
 target_fps = 30
 clock = pygame.time.Clock()
 
-server_ip = '172.27.32.1'
+server_ip = '192.168.178.45'
 
 music_manager_obj = MusicManager.MusicManager()
 next_song = music_manager_obj.get_next_song()
@@ -45,29 +45,12 @@ pygame.mixer.music.set_volume(0.0)
 pygame.mixer.music.play()
 
 
-class Flag2Country:
-    pos_count = 0
-    correct_sound = pygame.mixer.Sound("assets/tones/correct.mp3")
-    incorrect_sound = pygame.mixer.Sound("assets/tones/wrong.mp3")
-    current_datetime = datetime.datetime.now()
-    formatted_datetime = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
-    start_time = None
-    elapsed_time = 0
-
-    def __init__(self, country_deck=None, streak=0,
-                 filename=f"Gamesave_ID_1{formatted_datetime}.json", scroll_speed=10):
-        self.country_deck = country_deck
-        self.country_name = ""
-        self.countries = pycountry.countries
-        self.list_of_countries = []
-        self.list_of_chosen_countries = []
-        self.pos_list = []
-        self.picked_flag = ""
-        self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
-        self.streak = streak
+class Flag2CountryMixin:
+    def __init__(self):
+        self.country_deck = None
+        self.country_name = None
         self.card = None
-        self.filename = filename
-        self.scroll_speed = scroll_speed
+        self.picked_flag = None
 
     @staticmethod
     def quit_game(client, client_conn):
@@ -86,40 +69,46 @@ class Flag2Country:
                 pass
         return duplicates
 
-    def increase_streak(self):
-        self.streak = self.streak + 1
-        return
+    @staticmethod
+    def assign_pos(obj, pos_list, pos_count=0):
+        if not pos_list:
+            return
 
-    def reset_streak(self):
-        self.streak = 0
-        return
+        pos_var_name = "pos_" + str(pos_count + 1)
+        random_tuple = random.choice(pos_list)
+        setattr(obj, pos_var_name, random_tuple)
+        pos_list.remove(random_tuple)
+        pos_count += 1
 
-    def value_generator(self):
-        self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
-                         (window_width / 2 + window_width / 15, window_height / 2),
-                         (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
-                         (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
+        Flag2CountryMixin.assign_pos(obj, pos_list, pos_count)
+
+    def value_generator(self, child_obj):
         detect_duplicate_list = []
-        self.list_of_chosen_countries.clear()
+        list_of_chosen_countries = []
         self.card = self.country_deck.get_next_value()
         self.picked_flag = self.card.value[1]
         self.country_name = self.card.value[0]
+        detect_duplicate_list.append(self.country_name)
 
         for i in range(0, 3):
             cache = self.country_deck.get_random_card()
-            self.list_of_chosen_countries.append(
-                cache.value[0])  # Wählt 3 random Items aus dieser Liste aus und fügt sie einer anderen an
-        duplicate = self.detect_duplicates(detect_duplicate_list)
+            list_of_chosen_countries.append(
+                cache.value[0])  # 3 random items and adds them to the final countries list
+            detect_duplicate_list.append(
+                cache.value[0]
+            )
+        duplicate = Flag2CountryMixin.detect_duplicates(detect_duplicate_list)
 
         if duplicate:
-            return True
+            self.value_generator(child_obj)
+        else:
+            return list_of_chosen_countries
 
     def create_game_deck_generation(self):
         if self.country_deck is not None:
             return
 
         else:
-            print("generated")
             items = os.listdir(
                 r"flags")
 
@@ -136,22 +125,33 @@ class Flag2Country:
                 self.country_deck.add_card(country)
             return
 
-    def assign_pos(self):
-        if not self.pos_list:
-            self.pos_count = 0
-            self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
-                             (window_width / 2 + window_width / 15, window_height / 2),
-                             (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
-                             (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
-            return
 
-        pos_var_name = "pos_" + str(self.pos_count + 1)
-        random_tuple = random.choice(self.pos_list)
-        setattr(self, pos_var_name, random_tuple)
-        self.pos_list.remove(random_tuple)
-        self.pos_count += 1
+class Flag2Country(Flag2CountryMixin):
+    correct_sound = pygame.mixer.Sound("assets/tones/correct.mp3")
+    incorrect_sound = pygame.mixer.Sound("assets/tones/wrong.mp3")
+    current_datetime = datetime.datetime.now()
+    formatted_datetime = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
+    start_time = None
+    elapsed_time = 0
 
-        self.assign_pos()
+    def __init__(self, country_deck=None, streak=0, filename=f"Gamesave_ID_1{formatted_datetime}.json",
+                 scroll_speed=10):
+        super().__init__()
+        self.country_deck = country_deck
+        self.countries = pycountry.countries
+        self.list_of_chosen_countries = []
+        self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
+        self.streak = streak
+        self.filename = filename
+        self.scroll_speed = scroll_speed
+
+    def increase_streak(self):
+        self.streak = self.streak + 1
+        return
+
+    def reset_streak(self):
+        self.streak = 0
+        return
 
     def wrong_answer(self):
         self.incorrect_sound.play()
@@ -172,10 +172,14 @@ class Flag2Country:
         self.country_deck.write_to_json(obj=self.country_deck, filename=self.filename)
 
     def flag2country_quiz(self):
+        answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 rop left
+                           (window_width / 2 + window_width / 15, window_height / 2),
+                           (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
+                           (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
+
         self.create_game_deck_generation()
-        if self.value_generator():
-            self.value_generator()
-        self.assign_pos()
+        self.list_of_chosen_countries = self.value_generator(self)
+        self.assign_pos(obj=self, pos_list=answer_pos_list)
         self.elapsed_time = 0
         self.start_time = None
         self.start_time = pygame.time.get_ticks()
@@ -242,7 +246,7 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_1:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
@@ -360,7 +364,7 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
 
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_SPACE:
@@ -438,7 +442,7 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
 
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_SPACE:
@@ -463,6 +467,88 @@ class Flag2Country:
             clock.tick(target_fps)
 
 
+class PvP_Flag2country(Flag2CountryMixin):
+    def __init__(self, set_time=0):
+        super().__init__()
+        self.set_time = set_time
+        self.player_list = []
+        self.list_of_chosen_countries = []
+        self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
+
+    def draw_screen(self):
+        answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 rop left
+                           (window_width / 2 + window_width / 15, window_height / 2),
+                           (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
+                           (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
+
+        self.create_game_deck_generation()
+        self.list_of_chosen_countries = self.value_generator(self)
+        self.assign_pos(obj=self, pos_list=answer_pos_list)
+
+        while True:
+            self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
+            MOUSE_POS = pygame.mouse.get_pos()
+
+            SCREEN.fill("#353a3c")
+
+            answer_1 = Button_xy_cords(image=None, pos=self.pos_1,
+                                       text_input=self.list_of_chosen_countries[0],
+                                       font=helper.get_font(
+                                           helper.calculate_font_size(window_width, window_height, 0.05)),
+                                       base_color="White",
+                                       hovering_color="Light Blue")
+
+            answer_2 = Button_xy_cords(image=None, pos=self.pos_2,
+                                       text_input=self.list_of_chosen_countries[1],
+                                       font=helper.get_font(
+                                           helper.calculate_font_size(window_width, window_height, 0.05)),
+                                       base_color="White",
+                                       hovering_color="Light Blue")
+
+            answer_3 = Button_xy_cords(image=None, pos=self.pos_3,
+                                       text_input=self.list_of_chosen_countries[2],
+                                       font=helper.get_font(
+                                           helper.calculate_font_size(window_width, window_height, 0.05)),
+                                       base_color="White",
+                                       hovering_color="Light Blue")
+
+            answer_4 = Button_xy_cords(image=None, pos=self.pos_4,
+                                       text_input=self.country_name,
+                                       font=helper.get_font(
+                                           helper.calculate_font_size(window_width, window_height, 0.05)),
+                                       base_color="White",
+                                       hovering_color="Light Blue")
+
+            flag_img = pygame.image.load(
+                os.path.join('flags', self.picked_flag)
+            )
+            flag = pygame.transform.scale(flag_img, (self.FLAG_WIDTH, self.FLAG_HEIGHT))
+            SCREEN.blit(flag, (window_width / 2 - self.FLAG_WIDTH / 2, window_height / 9))
+
+            button_list = [answer_1, answer_2, answer_3, answer_4]
+
+            for button in button_list:
+                button.changeColor(MOUSE_POS)
+                button.update(SCREEN)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    Flag2CountryMixin.quit_game(None, None)
+
+                elif event.type == pygame.USEREVENT:
+                    pygame.mixer.music.load(os.path.join('assets/music', music_manager_obj.get_next_song()))
+                    pygame.mixer.music.play()
+
+    class Player:
+        def __init__(self, current_score=0):
+            self.current_score = current_score
+            self.profile_picture = "____"
+            self.player_name = "testname"
+
+        def increase_score(self, increase_value):
+            self.current_score += increase_value
+
+
 class Menu:
     def __init__(self, game_version, scroll_speed=10):
         self.state = "StartMenu"
@@ -477,18 +563,23 @@ class Menu:
             MENU_MOUSE_POS = pygame.mouse.get_pos()
 
             MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
-                "MAIN MENU", True,
+                "START MENU", True,
                 "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
-            NEW_GAME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
+            TRAINING_BUTTON = Button(image=None, pos=(window_width / 2 - window_width / 4, window_height / 2.5),
                                      text_input="New Game",
                                      font=helper.get_font(
-                                         helper.calculate_font_size(window_width, window_height, 0.09)),
+                                         helper.calculate_font_size(window_width, window_height, 0.07)),
                                      base_color="White", hovering_color="#dadddd")
+            COMPETITIVE_MODE_BUTTON = Button(image=None, pos=(window_width / 2 + window_width / 4, window_height / 2.5),
+                                             text_input="1v1 Modes",
+                                             font=helper.get_font(
+                                                 helper.calculate_font_size(window_width, window_height, 0.07)),
+                                             base_color="White", hovering_color="#dadddd")
             RESUME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 14),
-                                   text_input="Resume",
-                                   font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)),
+                                   text_input="Resume a Game",
+                                   font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
                                    base_color="White",
                                    hovering_color="#dadddd")
             QUIT_BUTTON = Button(image=None,
@@ -505,16 +596,16 @@ class Menu:
 
             SCREEN.blit(MENU_TEXT, MENU_RECT)
 
-            for button in [NEW_GAME_BUTTON, RESUME_BUTTON, QUIT_BUTTON, SETTINGS_BUTTON]:
+            for button in [TRAINING_BUTTON, RESUME_BUTTON, QUIT_BUTTON, SETTINGS_BUTTON, COMPETITIVE_MODE_BUTTON]:
                 button.changeColor(MENU_MOUSE_POS)
                 button.update(SCREEN)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if NEW_GAME_BUTTON.checkForInput(MENU_MOUSE_POS):
+                        if TRAINING_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
                             menu_obj.state = "NewGameMenu"
                             return
@@ -522,19 +613,83 @@ class Menu:
                             CLICK_SOUND.play()
                             menu_obj.state = "ResumeGameMenu"
                             return
+                        if COMPETITIVE_MODE_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            menu_obj.state = "CompetitiveModeMenu"
+                            return
                         if SETTINGS_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
                             menu_obj.state = "SettingsMenu"
                             return
                         if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2Country.quit_game(None, None)
+                            Flag2CountryMixin.quit_game(None, None)
+
+            pygame.display.update()
+            clock.tick(target_fps)
+
+    def competitiv_mode_menu(self):
+        while True:
+            SCREEN.blit(BG, (0, 0))
+
+            MENU_MOUSE_POS = pygame.mouse.get_pos()
+
+            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)).render(
+                "COMPETITIVE MENU", True,
+                "#f1f25f")
+            MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
+
+            PVAI_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
+                                 text_input="Player vs. AI",
+                                 font=helper.get_font(
+                                     helper.calculate_font_size(window_width, window_height, 0.07)),
+                                 base_color="White", hovering_color="#dadddd")
+            PVP_MODE_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2),
+                                     text_input="PVP (1v1)",
+                                     font=helper.get_font(
+                                         helper.calculate_font_size(window_width, window_height, 0.07)),
+                                     base_color="White", hovering_color="#dadddd")
+            BACK_BUTTON = Button(image=None, pos=(window_width / 2 + window_width / 4, window_height / 2 + window_height / 3.25),
+                                 text_input="BACK",
+                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
+                                 base_color="White",
+                                 hovering_color="#dadddd")
+            QUIT_BUTTON = Button(image=None,
+                                 pos=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 3.25),
+                                 text_input="QUIT",
+                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.08)),
+                                 base_color="White", hovering_color="#dadddd")
+
+            SCREEN.blit(MENU_TEXT, MENU_RECT)
+
+            for button in [PVAI_BUTTON, BACK_BUTTON, QUIT_BUTTON, PVP_MODE_BUTTON]:
+                button.changeColor(MENU_MOUSE_POS)
+                button.update(SCREEN)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    Flag2CountryMixin.quit_game(None, None)
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if PVAI_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                        elif BACK_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            menu_obj.state = "StartMenu"
+                            return
+                        elif PVP_MODE_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            temp_game_obj = PvP_Flag2country()
+                            menu_obj.state = "PVP"
+                            return temp_game_obj
+                        elif QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            Flag2CountryMixin.quit_game(None, None)
 
             pygame.display.update()
             clock.tick(target_fps)
 
     def new_game_menu(self):
-
         while True:
             SCREEN.blit(BG, (0, 0))
 
@@ -576,7 +731,7 @@ class Menu:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if FLAG2COUNTRY_BUTTON.checkForInput(MENU_MOUSE_POS):
@@ -591,7 +746,7 @@ class Menu:
                             return
                         if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2Country.quit_game(None, None)
+                            Flag2CountryMixin.quit_game(None, None)
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -633,7 +788,7 @@ class Menu:
 
             for event in event:
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
@@ -724,7 +879,7 @@ class Menu:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
@@ -733,7 +888,7 @@ class Menu:
                             return
                         elif QUIT_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2Country.quit_game(None, None)
+                            Flag2CountryMixin.quit_game(None, None)
                         elif SAVED_GAMES_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
                             menu_obj.state = "SavedGamesMenu"
@@ -893,7 +1048,7 @@ class Menu:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(client_conn, server_connection_state)
+                    Flag2CountryMixin.quit_game(client_conn, server_connection_state)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 4:  # Mausrad nach oben
                         self.scroll_y -= self.scroll_speed * 2
@@ -940,7 +1095,6 @@ class Menu:
                                 Window_size_dropdown_state = True
                         elif Window_size_dropdown_state:
                             selected_options = WINDOW_SIZE_DROPDOWN.check_dropdown(MOUSE_POS)
-                            print(selected_options)
                             if selected_options:
                                 if selected_options == "FULL SCREEN":
                                     SCREEN = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -988,7 +1142,6 @@ class Menu:
         BG_header_img = pygame.image.load("assets/Background-heading.jpg")
         BG_header = pygame.transform.scale(BG_header_img, (window_width, window_height / 4.431))
 
-        # scroll_window_width = window_width
         scroll_window_height = window_height * 10
         relativ_x = window_width / 2
         relativ_y = window_height / 2 - window_height / 6
@@ -1024,7 +1177,6 @@ class Menu:
                 button_instance.changeColor(MOUSE_POS)
                 button_instance.update(SCREEN)
 
-            # self.scroll_x = max(0, min(self.scroll_x, scroll_window_width - window_width))
             self.scroll_y = max(0, min(self.scroll_y, scroll_window_height - window_height))
 
             HEADING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
@@ -1053,11 +1205,11 @@ class Menu:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2Country.quit_game(None, None)
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 4:  # Mausrad nach oben
+                    if event.button == 4:  # Mouse up
                         self.scroll_y -= self.scroll_speed * 2
-                    elif event.button == 5:  # Mausrad nach unten
+                    elif event.button == 5:  # Mouse down
                         self.scroll_y += self.scroll_speed * 2
                     if event.button == 1:
                         count = 0
@@ -1080,7 +1232,7 @@ class Menu:
                             return
                         if QUIT_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2Country.quit_game(None, None)
+                            Flag2CountryMixin.quit_game(None, None)
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -1094,6 +1246,8 @@ def mainloop():
             menu_obj.new_game_menu()
         elif menu_obj.state == "ResumeGameMenu":
             menu_obj.resume_game_menu()
+        elif menu_obj.state == "CompetitiveModeMenu":
+            PVP_GAME_OBJ = menu_obj.competitiv_mode_menu()
 
         elif menu_obj.state == "SettingsMenu":
             menu_obj.settings_menu()
@@ -1109,6 +1263,9 @@ def mainloop():
             GAME_OBJ.false_answer_screen()
         elif menu_obj.state == "Flag2CountryRightA":
             GAME_OBJ.true_answer_screen()
+
+        elif menu_obj.state == "PVP":
+            PVP_GAME_OBJ.draw_screen()
 
 
 if __name__ == "__main__":
