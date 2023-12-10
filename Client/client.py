@@ -46,7 +46,7 @@ class ClientConnection:
             send_msg_type = str(3).encode()
             self.client.send(send_msg_type)
 
-            game_version_pickle = pickle.dumps(game_version)  # Transforms Game version to pickle objekt
+            game_version_pickle = pickle.dumps(self.game_version)  # Transforms Game version to pickle objekt
             msg_length = len(game_version_pickle)
             msg_length_header = f"{msg_length:<{HEADER}}".encode()  # Makes msg_length into a header
 
@@ -108,7 +108,7 @@ class ClientConnection:
             else:
                 print("You haven't any Backup data")
 
-        if msg_type == "":  # For 1vs1 Mode
+        if msg_type == "PVP":  # For 1vs1 Mode
             send_msg_type = str(6).encode()
             self.client.send(send_msg_type)
 

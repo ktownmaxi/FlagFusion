@@ -1,7 +1,9 @@
+import os
+import pickle
 import socket
 import threading
-import pickle
-import os
+
+import pvp_flag2country_management as pvp
 
 HEADER = 64
 PORT = 5050
@@ -15,7 +17,7 @@ server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(ADDR)
 
 
-def handle_client(conn, addr):
+def handle_client(conn, addr, pvp_server_obj):
     print(f"New Connection {addr} connected.")
     connected = True
     while connected:
@@ -105,9 +107,14 @@ def handle_client(conn, addr):
                 conn.send(element_count)
 
         if msg_type == '6':  # starting 1vs1 mode
-            pass
+            print("pvp mode")
+            pvp_server_obj.player_list.append(conn)
+            if pvp_server_obj.check_player_count():
+                pvp_server_obj.setup()
 
         if msg_type == '7':
+            if addr in pvp_server_obj.player_list:
+                pvp_server_obj.player_list.remove(conn)
             connected = False
     print("Connection closed")
     conn.close()
@@ -127,9 +134,10 @@ def recv_data(conn, msg_length):
 def start():
     server.listen(2)
     print(f"Server Local IP {SERVER}")
+    pvp_server = pvp.Server_side_pvp(server)
     while True:
         conn, addr = server.accept()
-        thread = threading.Thread(target=handle_client, args=(conn, addr))
+        thread = threading.Thread(target=handle_client, args=(conn, addr, pvp_server))
         thread.start()
         print(f" Active Connections {threading.active_count() - 1}")
 
