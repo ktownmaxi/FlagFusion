@@ -1,6 +1,6 @@
 import pygame
+
 import helper
-from Client.Main import window_height, window_width
 
 
 class Button:
@@ -121,17 +121,17 @@ class DropDownMenu:
         else:
             self.text = self.font.render(self.text_input, True, self.base_color)
 
-    def draw_dropdown(self, screen, font_factor, mouse_pos):
+    def draw_dropdown(self, screen, font_factor, mouse_pos, window_hw):
 
         for i, option in enumerate(self.dropdown_options):
             option_button = Button(image=None,
                                    pos=(self.x_pos,
-                                        self.y_pos + window_height / 25 + (i + 1) * helper.calculate_font_size(
-                                            window_width, window_height,
+                                        self.y_pos + window_hw[1] / 25 + (i + 1) * helper.calculate_font_size(
+                                            window_hw[0], window_hw[1],
                                             font_factor)),
                                    text_input=option,
                                    font=helper.get_font(
-                                       helper.calculate_font_size(window_width, window_height, font_factor)),
+                                       helper.calculate_font_size(window_hw[0], window_hw[1], font_factor)),
                                    base_color="White", hovering_color="#dadddd")
             self.option_buttons.append(option_button)
             option_button.changeColor(mouse_pos)

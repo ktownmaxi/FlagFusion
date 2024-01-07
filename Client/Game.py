@@ -1,8 +1,12 @@
 import datetime
+import functools
+import json
 import os
+import queue
 import random
 import socket
 import sys
+import threading
 
 import pycountry
 import pycountry_convert
@@ -10,6 +14,7 @@ import pygame.time
 
 import MusicManager
 import Recommendation
+from Client import client
 from button import *
 
 pygame.init()
@@ -33,10 +38,10 @@ GRAY = (200, 200, 200)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 
-target_fps = 120
+target_fps = 30
 clock = pygame.time.Clock()
 
-server_ip = '172.27.32.1'
+server_ip = '192.168.178.45'
 
 music_manager_obj = MusicManager.MusicManager()
 next_song = music_manager_obj.get_next_song()
@@ -45,38 +50,19 @@ pygame.mixer.music.set_volume(0.0)
 pygame.mixer.music.play()
 
 
-# noinspection PyCompatibility
-class Flag2Country:
-    pos_count = 0
-    correct_sound = pygame.mixer.Sound("assets/tones/correct.mp3")
-    incorrect_sound = pygame.mixer.Sound("assets/tones/wrong.mp3")
-    current_datetime = datetime.datetime.now()
-    formatted_datetime = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
-    start_time = None
-    elapsed_time = 0
-
-    def __init__(self, game_version=str(0.1), country_deck=None, streak=0,
-                 filename=f"Gamesave_ID_1{formatted_datetime}.json", scroll_x=0, scroll_y=0, scroll_speed=10):
-        self.state = "StartMenu"
-        self.country_deck = country_deck
-        self.country_name = ""
-        self.countries = pycountry.countries
-        self.list_of_countries = []
-        self.list_of_chosen_countries = []
-        self.pos_list = []
-        self.picked_flag = ""
-        self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
-        self.streak = streak
+class Flag2CountryMixin:
+    def __init__(self, game_version):
+        self.country_deck = None
+        self.country_name = None
         self.card = None
-        self.filename = filename
+        self.picked_flag = None
         self.game_version = game_version
-        self.scroll_x = scroll_x
-        self.scroll_y = scroll_y
-        self.scroll_speed = scroll_speed
+        self.random_countries = []
 
     @staticmethod
-    def quit_game(client):
-        client.send('Disconnect')
+    def quit_game(client_conn, client_bol):
+        if client_bol:
+            client_conn.sendDisconnect()
         pygame.quit()
         sys.exit()
 
@@ -90,40 +76,66 @@ class Flag2Country:
                 pass
         return duplicates
 
-    def increase_streak(self):
-        self.streak = self.streak + 1
-        return
+    @staticmethod
+    def run_once(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if not wrapper.has_run:
+                wrapper.has_run = True
+                return func(*args, **kwargs)
 
-    def reset_streak(self):
-        self.streak = 0
-        return
+        wrapper.has_run = False
+        return wrapper
 
-    def value_generator(self):
-        self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
-                         (window_width / 2 + window_width / 15, window_height / 2),
-                         (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
-                         (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
+    @staticmethod
+    def assign_pos(obj, pos_list, pos_count=0):
+        if not pos_list:
+            return
+
+        pos_var_name = "pos_" + str(pos_count + 1)
+        random_tuple = random.choice(pos_list)
+        setattr(obj, pos_var_name, random_tuple)
+        pos_list.remove(random_tuple)
+        pos_count += 1
+
+        Flag2CountryMixin.assign_pos(obj, pos_list, pos_count)
+
+    @staticmethod
+    def find_country_from_pic_name(file_name, data_path):
+        with open(data_path, 'r') as file:
+            data = json.load(file)
+
+        for card in data["cards"]:
+            if file_name in card["value"]:
+                return card["value"][0]
+
+    def value_generator(self, child_obj):
         detect_duplicate_list = []
-        self.list_of_chosen_countries.clear()
+        list_of_chosen_countries = []
         self.card = self.country_deck.get_next_value()
         self.picked_flag = self.card.value[1]
         self.country_name = self.card.value[0]
+        detect_duplicate_list.append(self.country_name)
 
         for i in range(0, 3):
             cache = self.country_deck.get_random_card()
-            self.list_of_chosen_countries.append(
-                cache.value[0])  # Wählt 3 random Items aus dieser Liste aus und fügt sie einer anderen an
-        duplicate = GAME_OBJEKT.detect_duplicates(detect_duplicate_list)
+            list_of_chosen_countries.append(
+                cache.value[0])  # 3 random items and adds them to the final countries list
+            detect_duplicate_list.append(
+                cache.value[0]
+            )
+        duplicate = Flag2CountryMixin.detect_duplicates(detect_duplicate_list)
 
         if duplicate:
-            return True
+            self.value_generator(child_obj)
+        else:
+            return list_of_chosen_countries
 
     def create_game_deck_generation(self):
         if self.country_deck is not None:
             return
 
         else:
-            print("generated")
             items = os.listdir(
                 r"flags")
 
@@ -140,33 +152,53 @@ class Flag2Country:
                 self.country_deck.add_card(country)
             return
 
-    def assign_pos(self):
-        if not self.pos_list:
-            self.pos_count = 0
-            self.pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 oben links
-                             (window_width / 2 + window_width / 15, window_height / 2),
-                             (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
-                             (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
-            return
+    def try_connect_to_server(self):
+        try:
+            client_conn = client.ClientConnection(server_ip, self.game_version)
+            server_connection_state = True
+            return client_conn, server_connection_state
+        except ConnectionRefusedError:
+            print("Server refused the connection")
+            server_connection_state = False
+            return None, server_connection_state
 
-        pos_var_name = "pos_" + str(self.pos_count + 1)
-        random_tuple = random.choice(self.pos_list)
-        setattr(self, pos_var_name, random_tuple)
-        self.pos_list.remove(random_tuple)
-        self.pos_count += 1
 
-        self.assign_pos()
+class Flag2Country(Flag2CountryMixin):
+    correct_sound = pygame.mixer.Sound("assets/tones/correct.mp3")
+    incorrect_sound = pygame.mixer.Sound("assets/tones/wrong.mp3")
+    current_datetime = datetime.datetime.now()
+    formatted_datetime = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
+    start_time = None
+    elapsed_time = 0
+
+    def __init__(self, country_deck=None, streak=0, filename=f"Gamesave_ID_1{formatted_datetime}.json",
+                 scroll_speed=10):
+        super().__init__(0.1)
+        self.country_deck = country_deck
+        self.countries = pycountry.countries
+        self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
+        self.streak = streak
+        self.filename = filename
+        self.scroll_speed = scroll_speed
+
+    def increase_streak(self):
+        self.streak = self.streak + 1
+        return
+
+    def reset_streak(self):
+        self.streak = 0
+        return
 
     def wrong_answer(self):
         self.incorrect_sound.play()
-        GAME_OBJEKT.reset_streak()
+        self.reset_streak()
         self.elapsed_time += pygame.time.get_ticks() - self.start_time
         self.start_time = None
         self.country_deck.update_card(self.card, True, self.elapsed_time)
 
     def right_answer(self):
         self.correct_sound.play()
-        GAME_OBJEKT.increase_streak()
+        self.increase_streak()
         self.elapsed_time += pygame.time.get_ticks() - self.start_time
         self.start_time = None
         self.country_deck.update_card(self.card, False, self.elapsed_time)
@@ -176,10 +208,14 @@ class Flag2Country:
         self.country_deck.write_to_json(obj=self.country_deck, filename=self.filename)
 
     def flag2country_quiz(self):
-        GAME_OBJEKT.create_game_deck_generation()
-        if GAME_OBJEKT.value_generator():
-            GAME_OBJEKT.value_generator()
-        GAME_OBJEKT.assign_pos()
+        answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 top left
+                           (window_width / 2 + window_width / 15, window_height / 2),
+                           (window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4),
+                           (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
+
+        self.create_game_deck_generation()
+        self.random_countries = self.value_generator(self)
+        self.assign_pos(obj=self, pos_list=answer_pos_list)
         self.elapsed_time = 0
         self.start_time = None
         self.start_time = pygame.time.get_ticks()
@@ -189,28 +225,28 @@ class Flag2Country:
 
             SCREEN.fill("#353a3c")
 
-            answer_1 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_1,
-                                       text_input=self.list_of_chosen_countries[0],
+            answer_1 = Button_xy_cords(image=None, pos=self.pos_1,
+                                       text_input=self.random_countries[0],
                                        font=helper.get_font(
                                            helper.calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
-            answer_2 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_2,
-                                       text_input=self.list_of_chosen_countries[1],
+            answer_2 = Button_xy_cords(image=None, pos=self.pos_2,
+                                       text_input=self.random_countries[1],
                                        font=helper.get_font(
                                            helper.calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
-            answer_3 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_3,
-                                       text_input=self.list_of_chosen_countries[2],
+            answer_3 = Button_xy_cords(image=None, pos=self.pos_3,
+                                       text_input=self.random_countries[2],
                                        font=helper.get_font(
                                            helper.calculate_font_size(window_width, window_height, 0.05)),
                                        base_color="White",
                                        hovering_color="Light Blue")
 
-            answer_4 = Button_xy_cords(image=None, pos=GAME_OBJEKT.pos_4,
+            answer_4 = Button_xy_cords(image=None, pos=self.pos_4,
                                        text_input=self.country_name,
                                        font=helper.get_font(
                                            helper.calculate_font_size(window_width, window_height, 0.05)),
@@ -246,65 +282,63 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-
+                    Flag2CountryMixin.quit_game(None, None)
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_1:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 - window_width / 2.125, window_height / 2):
                             CLICK_SOUND.play()  # Wenn Button 4 oben links (pos1(gedrückte taste)) ist dann -
-                            GAME_OBJEKT.right_answer()
-                            self.state = "Flag2CountryRightA"
+                            self.right_answer()
+                            menu_obj.state = "Flag2CountryRightA"
                             return
                     if event.key == pygame.K_2:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 + window_width / 15, window_height / 2):
                             CLICK_SOUND.play()
-                            GAME_OBJEKT.right_answer()
-                            self.state = "Flag2CountryRightA"
+                            self.right_answer()
+                            menu_obj.state = "Flag2CountryRightA"
                             return
                     if event.key == pygame.K_3:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
-                            GAME_OBJEKT.right_answer()
-                            self.state = "Flag2CountryRightA"
+                            self.right_answer()
+                            menu_obj.state = "Flag2CountryRightA"
                             return
                     if event.key == pygame.K_4:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 + window_width / 15, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
-                            GAME_OBJEKT.right_answer()
-                            self.state = "Flag2CountryRightA"
+                            self.right_answer()
+                            menu_obj.state = "Flag2CountryRightA"
                             return
                     if event.type != pygame.KEYDOWN or event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4]:
                         CLICK_SOUND.play()
-                        GAME_OBJEKT.wrong_answer()
-                        self.state = "Flag2CountryWrongA"
+                        self.wrong_answer()
+                        menu_obj.state = "Flag2CountryWrongA"
                         return
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if answer_1.checkForInput(DRAW_MOUSE_POS):
                             CLICK_SOUND.play()
-                            GAME_OBJEKT.wrong_answer()
-                            self.state = "Flag2CountryWrongA"
+                            self.wrong_answer()
+                            menu_obj.state = "Flag2CountryWrongA"
                             return
                         if answer_2.checkForInput(DRAW_MOUSE_POS):
                             CLICK_SOUND.play()
-                            GAME_OBJEKT.wrong_answer()
-                            self.state = "Flag2CountryWrongA"
+                            self.wrong_answer()
+                            menu_obj.state = "Flag2CountryWrongA"
                             return
                         if answer_3.checkForInput(DRAW_MOUSE_POS):
                             CLICK_SOUND.play()
-                            GAME_OBJEKT.wrong_answer()
-                            self.state = "Flag2CountryWrongA"
+                            self.wrong_answer()
+                            menu_obj.state = "Flag2CountryWrongA"
                             return
                         if answer_4.checkForInput(DRAW_MOUSE_POS):
                             CLICK_SOUND.play()
-                            GAME_OBJEKT.right_answer()
-                            self.state = "Flag2CountryRightA"
+                            self.right_answer()
+                            menu_obj.state = "Flag2CountryRightA"
                             return
 
                 elif event.type == pygame.USEREVENT:
@@ -366,27 +400,26 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(None, None)
 
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_SPACE:
                         CLICK_SOUND.play()
-                        self.state = "PlayFlag2Country"
+                        menu_obj.state = "PlayFlag2Country"
                         return
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if next_button.checkForInput(TRUE_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "PlayFlag2Country"
+                            menu_obj.state = "PlayFlag2Country"
                             return
                         if menu_button.checkForInput(TRUE_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "StartMenu"
+                            menu_obj.state = "StartMenu"
                             return
                         if save_button.checkForInput(TRUE_MOUSE_POS):
-                            GAME_OBJEKT.save()
+                            self.save()
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -445,30 +478,434 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(None, None)
 
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_SPACE:
                         CLICK_SOUND.play()
-                        self.state = "PlayFlag2Country"
+                        menu_obj.state = "PlayFlag2Country"
                         return
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if next_button.checkForInput(FALSE_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "PlayFlag2Country"
+                            menu_obj.state = "PlayFlag2Country"
                             return
                         if menu_button.checkForInput(FALSE_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "StartMenu"
+                            menu_obj.state = "StartMenu"
                             return
                         if save_button.checkForInput(FALSE_MOUSE_POS):
-                            GAME_OBJEKT.save()
+                            self.save()
 
             pygame.display.update()
             clock.tick(target_fps)
+
+
+class PvP_Flag2country(Flag2CountryMixin):
+    def __init__(self):
+        super().__init__(0.1)
+        self.set_time = 10
+        self.player_list = []
+        self.list_of_chosen_countries = []
+        self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
+        self.flag_list = []
+        self.question_counter = 0
+        self.old_question_counter_value = self.question_counter
+        self.score, self.score_other_player = 0, 0
+        self.right_question_counter, self.other_player_right_question_counter = 0, 0
+        self.won = None
+
+    def increase_score_and_rquestion_counter(self, increase_value=1):
+        self.score += increase_value
+        self.right_question_counter += 1
+
+    def decrease_score(self, decrease_value=1):
+        self.score -= decrease_value
+
+    def increase_question_counter(self):
+        self.question_counter += 1
+
+    def check_if_question_counter_increased(self):
+        if self.question_counter == 0:
+            self.question_counter += 1
+            self.old_question_counter_value = self.question_counter
+            return True
+
+        elif self.question_counter == self.old_question_counter_value + 1:
+            self.old_question_counter_value = self.question_counter
+            return True
+        else:
+            self.old_question_counter_value = self.question_counter
+            return False
+
+    def create_questions(self, current_question_count):
+
+        detect_duplicate_list = []
+        file_path = os.path.join("assets", "sample_deck.json")
+        self.country_deck = Recommendation.FlashcardDeck.read_from_json(file_path)
+
+        self.picked_flag = self.flag_list[current_question_count]
+        self.country_name = self.find_country_from_pic_name(file_name=self.picked_flag, data_path=file_path)
+        detect_duplicate_list.append(self.country_name)
+
+        self.random_countries.clear()
+        for i in range(0, 3):
+            cache = self.country_deck.get_random_card()
+            self.random_countries.append(
+                cache.value[0])
+            detect_duplicate_list.append(
+                cache.value[0]
+            )
+        duplicate = Flag2CountryMixin.detect_duplicates(detect_duplicate_list)
+
+        if duplicate:
+            self.create_questions(current_question_count)
+        else:
+            return self.random_countries
+
+    def calculate_right_percentage(self, right_answer_count):
+        return int(right_answer_count / max(1, self.question_counter - 1) * 100)
+
+    def draw_screen(self):
+        search_for_player = True
+        run_once_bool = True
+        client_conn, server_connection_state = self.try_connect_to_server()
+        if server_connection_state:
+            to_server_comm_obj = client_conn.pvpMode(client_conn.client)
+            check_player_thread = threading.Thread(target=to_server_comm_obj.recv_player_ready)
+            check_player_thread.start()
+
+        start_ticks = pygame.time.get_ticks()
+
+        while True:
+            if server_connection_state:
+                if not check_player_thread.is_alive():
+                    search_for_player = False
+                    if run_once_bool:
+                        self.flag_list = to_server_comm_obj.recv_flag_list()
+                        run_once_bool = False
+                    if self.check_if_question_counter_increased():
+                        answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 top left
+                                           (window_width / 2, window_height / 2),
+                                           (window_width / 2 - window_width / 2.125,
+                                            window_height / 2 + window_height / 4),
+                                           (window_width / 2, window_height / 2 + window_height / 4)]
+
+                        self.create_questions(self.question_counter)
+                        self.assign_pos(obj=self, pos_list=answer_pos_list)
+
+                        RIGHT_ANSWER_P = helper.get_font(
+                            helper.calculate_font_size(window_width, window_height, 0.03)).render(
+                            f"{self.calculate_right_percentage(max(0, self.right_question_counter))} % | {self.calculate_right_percentage(
+                                max(0, self.other_player_right_question_counter))} %",
+                            True, WHITE)
+                        RIGHT_ANSWER_P_RECT = RIGHT_ANSWER_P.get_rect(
+                            center=(window_width / 2 + window_width / 3,
+                                    window_height / 2 - window_height / 4))
+
+                    if "send_and_recv_score" in locals() and send_and_recv_score.is_alive():
+                        pass
+                    if "send_and_recv_score" in locals() and not send_and_recv_score.is_alive():
+                        try:
+                            self.score_other_player = int(q.get(timeout=0))
+                        except queue.Empty:
+                            pass
+                        finally:
+                            q = queue.Queue()
+                            send_and_recv_score = threading.Thread(
+                                target=to_server_comm_obj.send_score_to_server,
+                                args=(self.score, q))
+                            send_and_recv_score.start()
+                    else:
+                        q = queue.Queue()
+                        send_and_recv_score = threading.Thread(target=to_server_comm_obj.send_score_to_server,
+                                                               args=(self.score, q))
+                        send_and_recv_score.start()
+                        try:
+                            self.score_other_player = int(q.get(timeout=0))
+                        except queue.Empty:
+                            pass
+
+            self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 4, window_height / 4
+            MOUSE_POS = pygame.mouse.get_pos()
+
+            if server_connection_state is True and search_for_player is False:
+                SCREEN.fill("#353a3c")
+
+                answer_1 = Button_xy_cords(image=None, pos=self.pos_1,
+                                           text_input=self.random_countries[0],
+                                           font=helper.get_font(
+                                               helper.calculate_font_size(window_width, window_height, 0.025)),
+                                           base_color="White",
+                                           hovering_color="Light Blue")
+
+                answer_2 = Button_xy_cords(image=None, pos=self.pos_2,
+                                           text_input=self.random_countries[1],
+                                           font=helper.get_font(
+                                               helper.calculate_font_size(window_width, window_height, 0.025)),
+                                           base_color="White",
+                                           hovering_color="Light Blue")
+
+                answer_3 = Button_xy_cords(image=None, pos=self.pos_3,
+                                           text_input=self.random_countries[2],
+                                           font=helper.get_font(
+                                               helper.calculate_font_size(window_width, window_height, 0.025)),
+                                           base_color="White",
+                                           hovering_color="Light Blue")
+
+                answer_4 = Button_xy_cords(image=None, pos=self.pos_4,
+                                           text_input=self.country_name,
+                                           font=helper.get_font(
+                                               helper.calculate_font_size(window_width, window_height, 0.025)),
+                                           base_color="White",
+                                           hovering_color="Light Blue")
+
+                PLAYERS_SCORE = helper.get_font(
+                    helper.calculate_font_size(window_width, window_height, 0.03)).render(
+                    f"{self.score} | {self.score_other_player}",
+                    True, WHITE)
+                PLAYERS_SCORE_RECT = PLAYERS_SCORE.get_rect(center=(window_width / 2 + window_width / 3,
+                                                                    window_height / 2))
+
+                flag_img = pygame.image.load(
+                    os.path.join('flags', self.picked_flag)
+                )
+                flag = pygame.transform.scale(flag_img, (self.FLAG_WIDTH, self.FLAG_HEIGHT))
+                SCREEN.blit(flag, (window_width / 2 - self.FLAG_WIDTH / 2 - window_width / 10, window_height / 9))
+
+                elapsed_time = (pygame.time.get_ticks() - start_ticks) // 1000
+
+                if elapsed_time <= self.set_time:
+                    time_display = self.set_time - elapsed_time
+                else:
+                    time_display = 0
+
+                TIMER_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.03)).render(
+                    f"Time: {time_display} sec",
+                    True, WHITE)
+                TIMER_RECT = TIMER_TEXT.get_rect(center=(window_width / 2 + window_width / 3,
+                                                         window_height / 2 + window_height / 4))
+
+                if time_display == 0:
+                    if self.score > self.score_other_player:
+                        self.won = True
+                        client_conn.sendDisconnect()
+                        menu_obj.state = "EndScreen"
+                        return
+                    else:
+                        self.won = False
+                        client_conn.sendDisconnect()
+                        menu_obj.state = "EndScreen"
+                        return
+
+                SCREEN.blit(TIMER_TEXT, TIMER_RECT)
+                SCREEN.blit(PLAYERS_SCORE, PLAYERS_SCORE_RECT)
+                if "RIGHT_ANSWER_P" in locals():
+                    SCREEN.blit(RIGHT_ANSWER_P, RIGHT_ANSWER_P_RECT)
+
+                SURRENDER_BUTTON = Button(image=None,
+                                          pos=(
+                                              window_width / 2 + window_width / 3,
+                                              window_height / 2 + window_height / 2.75),
+                                          text_input="SURRENDER",
+                                          font=helper.get_font(
+                                              helper.calculate_font_size(window_width, window_height, 0.03)),
+                                          base_color="White", hovering_color="#dadddd")
+
+                button_list = [answer_1, answer_2, answer_3, answer_4, SURRENDER_BUTTON]
+
+                for button in button_list:
+                    button.changeColor(MOUSE_POS)
+                    button.update(SCREEN)
+
+            elif server_connection_state is True and search_for_player is True:
+                SCREEN.fill("#353a3c")
+
+                INFORMATION_TEXT = helper.get_font(
+                    helper.calculate_font_size(window_width, window_height, 0.06)).render(
+                    "WAITING FOR OTHER PLAYERS",
+                    True, RED)
+                INFORMATION_RECT = INFORMATION_TEXT.get_rect(center=(window_width / 2, window_height / 2))
+
+                SCREEN.blit(INFORMATION_TEXT, INFORMATION_RECT)
+
+                LEAVE_QUEUE_BUTTON = Button(image=None,
+                                            pos=(
+                                                window_width / 2,
+                                                window_height / 2 + window_height / 3.5),
+                                            text_input="LEAVE QUEUE",
+                                            font=helper.get_font(
+                                                helper.calculate_font_size(window_width, window_height, 0.05)),
+                                            base_color="White", hovering_color="#dadddd")
+
+                for button in [LEAVE_QUEUE_BUTTON]:
+                    button.changeColor(MOUSE_POS)
+                    button.update(SCREEN)
+
+            else:
+                SCREEN.fill("#353a3c")
+
+                WARNING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.06)).render(
+                    "SERVER REFUSED THE CONNECTION",
+                    True, RED)
+                WARNING_RECT = WARNING_TEXT.get_rect(center=(window_width / 2, window_height / 2))
+
+                SCREEN.blit(WARNING_TEXT, WARNING_RECT)
+
+                BACK_BUTTON = Button(image=None,
+                                     pos=(
+                                         window_width / 2,
+                                         window_height / 2 + window_height / 3.5),
+                                     text_input="BACK TO START",
+                                     font=helper.get_font(
+                                         helper.calculate_font_size(window_width, window_height, 0.05)),
+                                     base_color="White", hovering_color="#dadddd")
+
+                for button in [BACK_BUTTON]:
+                    button.changeColor(MOUSE_POS)
+                    button.update(SCREEN)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    Flag2CountryMixin.quit_game(client_conn, True)
+
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_1:
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 - window_width / 2.125, window_height / 2):
+                            CLICK_SOUND.play()  # Wenn Button 4 oben links (pos1(gedrückte taste)) ist dann -
+                            self.increase_score_and_rquestion_counter()
+                            self.increase_question_counter()
+                    if event.key == pygame.K_2:
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 + window_width / 15, window_height / 2):
+                            CLICK_SOUND.play()
+                            self.increase_score_and_rquestion_counter()
+                            self.increase_question_counter()
+                    if event.key == pygame.K_3:
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4):
+                            CLICK_SOUND.play()
+                            self.increase_score_and_rquestion_counter()
+                            self.increase_question_counter()
+                    if event.key == pygame.K_4:
+                        if (button_list[3].x_pos, button_list[3].y_pos) == (
+                                window_width / 2 + window_width / 15, window_height / 2 + window_height / 4):
+                            CLICK_SOUND.play()
+                            self.increase_score_and_rquestion_counter()
+                            self.increase_question_counter()
+                    if event.type != pygame.KEYDOWN or event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4]:
+                        CLICK_SOUND.play()
+                        self.decrease_score()
+                        self.increase_question_counter()
+
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if server_connection_state is True and search_for_player is False:
+                            if SURRENDER_BUTTON.checkForInput(MOUSE_POS):
+                                CLICK_SOUND.play()
+                                menu_obj.state = "StartMenu"
+                                if server_connection_state:
+                                    client_conn.sendDisconnect()
+                                return
+
+                            if answer_1.checkForInput(MOUSE_POS):
+                                CLICK_SOUND.play()
+                                self.decrease_score()
+                                self.increase_question_counter()
+                            if answer_2.checkForInput(MOUSE_POS):
+                                CLICK_SOUND.play()
+                                self.decrease_score()
+                                self.increase_question_counter()
+                            if answer_3.checkForInput(MOUSE_POS):
+                                CLICK_SOUND.play()
+                                self.decrease_score()
+                                self.increase_question_counter()
+                            if answer_4.checkForInput(MOUSE_POS):
+                                CLICK_SOUND.play()
+                                self.increase_score_and_rquestion_counter()
+                                self.increase_question_counter()
+
+                        if server_connection_state is True and search_for_player is True:
+                            if LEAVE_QUEUE_BUTTON.checkForInput(MOUSE_POS):
+                                CLICK_SOUND.play()
+                                menu_obj.state = "CompetitiveModeMenu"
+                                if server_connection_state:
+                                    client_conn.sendDisconnect()
+                                    return
+                        if server_connection_state is False:
+                            if BACK_BUTTON.checkForInput(MOUSE_POS):
+                                CLICK_SOUND.play()
+                                menu_obj.state = "StartMenu"
+                                return
+                if event.type == pygame.USEREVENT:
+                    pygame.mixer.music.load(os.path.join('assets/music', music_manager_obj.get_next_song()))
+                    pygame.mixer.music.play()
+
+            pygame.display.update()
+            clock.tick(target_fps)
+
+    def end_screen(self):
+
+        while True:
+            MOUSE_POS = pygame.mouse.get_pos()
+            SCREEN.blit(BG, (0, 0))
+
+            if self.won:
+                TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
+                    "YOU WON",
+                    True, "#f1f25f")
+                MENU_RECT = TEXT.get_rect(center=(window_width / 2, window_height / 3))
+
+            else:
+                TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
+                    "YOU LOST",
+                    True, "#f1f25f")
+                MENU_RECT = TEXT.get_rect(center=(window_width / 2, window_height / 3))
+
+            RETURN_BUTTON = Button(image=None,
+                                   pos=(window_width / 2, window_height / 2 + window_height / 3),
+                                   text_input="RETURN TO MENU",
+                                   font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.08)),
+                                   base_color="White", hovering_color="#dadddd")
+
+            SCREEN.blit(TEXT, MENU_RECT)
+
+            for button in [RETURN_BUTTON]:
+                button.changeColor(MOUSE_POS)
+                button.update(SCREEN)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    Flag2CountryMixin.quit_game(None, None)
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if RETURN_BUTTON.checkForInput(MOUSE_POS):
+                            menu_obj.state = "StartMenu"
+                            return
+
+            pygame.display.update()
+            clock.tick(target_fps)
+
+    class Player:
+        def __init__(self, current_score=0):
+            self.current_score = current_score
+            self.profile_picture = "____"
+            self.player_name = "testname"
+
+        def increase_score(self, increase_value):
+            self.current_score += increase_value
+
+
+class Menu(Flag2CountryMixin):
+    def __init__(self, game_version, scroll_speed=10):
+        super().__init__(game_version)
+        self.state = "StartMenu"
+        self.scroll_speed = scroll_speed
+        self.scroll_y = 0
+        self.game_version = game_version
 
     def start_menu(self):
         while True:
@@ -477,18 +914,23 @@ class Flag2Country:
             MENU_MOUSE_POS = pygame.mouse.get_pos()
 
             MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
-                "MAIN MENU", True,
+                "START MENU", True,
                 "#f1f25f")
             MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
 
-            NEW_GAME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
+            TRAINING_BUTTON = Button(image=None, pos=(window_width / 2 - window_width / 4, window_height / 2.5),
                                      text_input="New Game",
                                      font=helper.get_font(
-                                         helper.calculate_font_size(window_width, window_height, 0.09)),
+                                         helper.calculate_font_size(window_width, window_height, 0.07)),
                                      base_color="White", hovering_color="#dadddd")
+            COMPETITIVE_MODE_BUTTON = Button(image=None, pos=(window_width / 2 + window_width / 4, window_height / 2.5),
+                                             text_input="1v1 Modes",
+                                             font=helper.get_font(
+                                                 helper.calculate_font_size(window_width, window_height, 0.07)),
+                                             base_color="White", hovering_color="#dadddd")
             RESUME_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2 + window_height / 14),
-                                   text_input="Resume",
-                                   font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)),
+                                   text_input="Resume a Game",
+                                   font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
                                    base_color="White",
                                    hovering_color="#dadddd")
             QUIT_BUTTON = Button(image=None,
@@ -505,38 +947,101 @@ class Flag2Country:
 
             SCREEN.blit(MENU_TEXT, MENU_RECT)
 
-            for button in [NEW_GAME_BUTTON, RESUME_BUTTON, QUIT_BUTTON, SETTINGS_BUTTON]:
+            for button in [TRAINING_BUTTON, RESUME_BUTTON, QUIT_BUTTON, SETTINGS_BUTTON, COMPETITIVE_MODE_BUTTON]:
                 button.changeColor(MENU_MOUSE_POS)
                 button.update(SCREEN)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if NEW_GAME_BUTTON.checkForInput(MENU_MOUSE_POS):
+                        if TRAINING_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "NewGameMenu"
+                            menu_obj.state = "NewGameMenu"
                             return
                         if RESUME_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "ResumeGameMenu"
+                            menu_obj.state = "ResumeGameMenu"
+                            return
+                        if COMPETITIVE_MODE_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            menu_obj.state = "CompetitiveModeMenu"
                             return
                         if SETTINGS_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "SettingsMenu"
+                            menu_obj.state = "SettingsMenu"
                             return
                         if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            pygame.quit()
-                            sys.exit()
+                            Flag2CountryMixin.quit_game(None, None)
+
+            pygame.display.update()
+            clock.tick(target_fps)
+
+    def competitive_mode_menu(self):
+        while True:
+            SCREEN.blit(BG, (0, 0))
+
+            MENU_MOUSE_POS = pygame.mouse.get_pos()
+
+            MENU_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.09)).render(
+                "COMPETITIVE MENU", True,
+                "#f1f25f")
+            MENU_RECT = MENU_TEXT.get_rect(center=(window_width / 2, window_height / 7))
+
+            PVAI_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2.5),
+                                 text_input="Player vs. AI",
+                                 font=helper.get_font(
+                                     helper.calculate_font_size(window_width, window_height, 0.07)),
+                                 base_color="White", hovering_color="#dadddd")
+            PVP_MODE_BUTTON = Button(image=None, pos=(window_width / 2, window_height / 2),
+                                     text_input="PVP (1v1)",
+                                     font=helper.get_font(
+                                         helper.calculate_font_size(window_width, window_height, 0.07)),
+                                     base_color="White", hovering_color="#dadddd")
+            BACK_BUTTON = Button(image=None,
+                                 pos=(window_width / 2 + window_width / 4, window_height / 2 + window_height / 3.25),
+                                 text_input="BACK",
+                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.07)),
+                                 base_color="White",
+                                 hovering_color="#dadddd")
+            QUIT_BUTTON = Button(image=None,
+                                 pos=(window_width / 2 - window_width / 4, window_height / 2 + window_height / 3.25),
+                                 text_input="QUIT",
+                                 font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.08)),
+                                 base_color="White", hovering_color="#dadddd")
+
+            SCREEN.blit(MENU_TEXT, MENU_RECT)
+
+            for button in [PVAI_BUTTON, BACK_BUTTON, QUIT_BUTTON, PVP_MODE_BUTTON]:
+                button.changeColor(MENU_MOUSE_POS)
+                button.update(SCREEN)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    Flag2CountryMixin.quit_game(None, None)
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if PVAI_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                        elif BACK_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            menu_obj.state = "StartMenu"
+                            return
+                        elif PVP_MODE_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            temp_game_obj = PvP_Flag2country()
+                            menu_obj.state = "PVP"
+                            return temp_game_obj
+                        elif QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
+                            CLICK_SOUND.play()
+                            Flag2CountryMixin.quit_game(None, None)
 
             pygame.display.update()
             clock.tick(target_fps)
 
     def new_game_menu(self):
-
         while True:
             SCREEN.blit(BG, (0, 0))
 
@@ -578,24 +1083,22 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if FLAG2COUNTRY_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "CreateGameMenu"
+                            menu_obj.state = "CreateGameMenu"
                             return
                         if COUNTRY2FLAG_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
                         if BACK_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "StartMenu"
+                            menu_obj.state = "StartMenu"
                             return
                         if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            pygame.quit()
-                            sys.exit()
+                            Flag2CountryMixin.quit_game(None, None)
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -637,8 +1140,7 @@ class Flag2Country:
 
             for event in event:
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(None, None)
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
@@ -646,12 +1148,12 @@ class Flag2Country:
                             CLICK_SOUND.play()
                             text_input = input_text
                             text_input = text_input + ".json"
-                            self.filename = text_input
-                            self.state = "PlayFlag2Country"
-                            return
+                            fresh_game_obj = Flag2Country(filename=text_input)
+                            menu_obj.state = "PlayFlag2Country"
+                            return fresh_game_obj
                         elif BACK_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "NewGameMenu"
+                            menu_obj.state = "NewGameMenu"
                             return
                         elif input_rect.collidepoint(event.pos):
                             active = not active
@@ -665,9 +1167,9 @@ class Flag2Country:
                             CLICK_SOUND.play()
                             text_input = input_text
                             text_input = text_input + ".json"
-                            self.filename = text_input
-                            self.state = "PlayFlag2Country"
-                            return
+                            fresh_game_obj = Flag2Country(filename=text_input)
+                            menu_obj.state = "PlayFlag2Country"
+                            return fresh_game_obj
                         elif event.key == pygame.K_BACKSPACE:
                             input_text = input_text[:-1]
                         else:
@@ -729,21 +1231,19 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "StartMenu"
+                            menu_obj.state = "StartMenu"
                             return
                         elif QUIT_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            pygame.quit()
-                            sys.exit()
+                            Flag2CountryMixin.quit_game(None, None)
                         elif SAVED_GAMES_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "SavedGamesMenu"
+                            menu_obj.state = "SavedGamesMenu"
                             return
                         elif OPTIONS_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
@@ -752,14 +1252,7 @@ class Flag2Country:
             clock.tick(target_fps)
 
     def settings_menu(self):
-        import client
-        server_connection_state = False
-        try:
-            client_conn = client.ClientConnection(server_ip)
-            server_connection_state = True
-        except ConnectionRefusedError:
-            print("Server refused the connection")
-            server_connection_state = False
+        client_conn, server_connection_state = self.try_connect_to_server()
         global SCREEN, window_height, window_width, BG, target_fps
         Window_size_dropdown_state = False
         FPS_dropdown_state = False
@@ -834,7 +1327,7 @@ class Flag2Country:
             WINDOW_SIZE_DROPDOWN = DropDownMenu(image=None, pos=(
                 window_width / 1.4, window_height / 2 - window_height / 4 - self.scroll_y), text_input="SIZES",
                                                 dropdown_options=["FULL SCREEN", "1920 x 1080", "2560 x 1440",
-                                                                   "4096 x 2304"],
+                                                                  "4096 x 2304"],
                                                 font=helper.get_font(
                                                     helper.calculate_font_size(window_width, window_height, 0.05)),
                                                 base_color="White", hovering_color="#dadddd")
@@ -871,10 +1364,10 @@ class Flag2Country:
                 button.update(SCREEN)
 
             if Window_size_dropdown_state:
-                WINDOW_SIZE_DROPDOWN.draw_dropdown(SCREEN, 0.05, MOUSE_POS)
+                WINDOW_SIZE_DROPDOWN.draw_dropdown(SCREEN, 0.05, MOUSE_POS, (window_width, window_height))
 
             if FPS_dropdown_state:
-                FPS_DROPDOWN.draw_dropdown(SCREEN, 0.05, MOUSE_POS)
+                FPS_DROPDOWN.draw_dropdown(SCREEN, 0.05, MOUSE_POS, (window_width, window_height))
 
             for image_button in [SEND_BACKUP_BUTTON, LOAD_BACKUP_BUTTON]:
                 image_button.update(SCREEN)
@@ -900,8 +1393,7 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(client_conn, server_connection_state)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 4:  # Mausrad nach oben
                         self.scroll_y -= self.scroll_speed * 2
@@ -910,8 +1402,9 @@ class Flag2Country:
                     elif event.button == 1:
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "StartMenu"
-                            client_conn.send("Disconnect")
+                            menu_obj.state = "StartMenu"
+                            if server_connection_state:
+                                client_conn.sendDisconnect()
                             return
 
                         elif SAVE_BUTTON.checkForInput(MOUSE_POS):
@@ -920,19 +1413,19 @@ class Flag2Country:
                             if SEND_BACKUP_BUTTON.checkForInput(MOUSE_POS):
                                 if server_connection_state is not False:
                                     CLICK_SOUND.play()
-                                    client_conn.send("BackupGames")
+                                    client_conn.backupGames()
                                 else:
                                     start_time = pygame.time.get_ticks()
                             elif LOAD_BACKUP_BUTTON.checkForInput(MOUSE_POS):
                                 if server_connection_state is not False:
                                     CLICK_SOUND.play()
-                                    client_conn.send("LoadBackup")
+                                    client_conn.loadBackup()
                                 else:
                                     start_time = pygame.time.get_ticks()
                             elif CHECK_FOR_UPDATE_BUTTON.checkForInput(MOUSE_POS):
                                 if server_connection_state is not False:
                                     CLICK_SOUND.play()
-                                    version_up_to_date = client_conn.send('checkUpdate')
+                                    version_up_to_date = client_conn.checkUpdate()
                                 else:
                                     start_time = pygame.time.get_ticks()
 
@@ -940,13 +1433,13 @@ class Flag2Country:
                             print("A Error with the network occurred")
 
                         if WINDOW_SIZE_DROPDOWN.checkForInput(MOUSE_POS):
+
                             if Window_size_dropdown_state:
                                 Window_size_dropdown_state = False
                             else:
                                 Window_size_dropdown_state = True
                         elif Window_size_dropdown_state:
                             selected_options = WINDOW_SIZE_DROPDOWN.check_dropdown(MOUSE_POS)
-                            print(selected_options)
                             if selected_options:
                                 if selected_options == "FULL SCREEN":
                                     SCREEN = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -994,7 +1487,6 @@ class Flag2Country:
         BG_header_img = pygame.image.load("assets/Background-heading.jpg")
         BG_header = pygame.transform.scale(BG_header_img, (window_width, window_height / 4.431))
 
-        scroll_window_width = window_width
         scroll_window_height = window_height * 10
         relativ_x = window_width / 2
         relativ_y = window_height / 2 - window_height / 6
@@ -1008,7 +1500,7 @@ class Flag2Country:
         for _ in game_buttons:
             button_pos.append((relativ_x, relativ_y))
             relativ_y += helper.calculate_font_size(window_width, window_height,
-                                                    0.07) * 1.5  # Spacing zwischen den Zeilen
+                                                    0.07) * 1.5  # Spacing between the lines
 
         while True:
             MOUSE_POS = pygame.mouse.get_pos()
@@ -1030,7 +1522,6 @@ class Flag2Country:
                 button_instance.changeColor(MOUSE_POS)
                 button_instance.update(SCREEN)
 
-            self.scroll_x = max(0, min(self.scroll_x, scroll_window_width - window_width))
             self.scroll_y = max(0, min(self.scroll_y, scroll_window_height - window_height))
 
             HEADING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
@@ -1059,64 +1550,71 @@ class Flag2Country:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    Flag2CountryMixin.quit_game(None, None)
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 4:  # Mausrad nach oben
+                    if event.button == 4:  # Mouse up
                         self.scroll_y -= self.scroll_speed * 2
-                    elif event.button == 5:  # Mausrad nach unten
+                    elif event.button == 5:  # Mouse down
                         self.scroll_y += self.scroll_speed * 2
                     if event.button == 1:
                         count = 0
                         for button in button_obj_list:
                             x, y = button_pos[count]
-                            button.x_pos = x - self.scroll_x
+                            #  button.x_pos = x - self.scroll_x
                             button.y_pos = y - self.scroll_y
                             if button.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()
                                 filename = button.text_input + ".json"
-                                loaded_deck_obj = Recommendation.FlashcardDeck()
-                                loaded_deck = loaded_deck_obj.read_from_json(filename=filename)
-                                self.filename = filename
-                                self.country_deck = loaded_deck
-                                self.state = "PlayFlag2Country"
-                                return
+                                file_path = os.path.join("saves", filename)
+                                loaded_deck = Recommendation.FlashcardDeck.read_from_json(file_path=file_path)
+                                fresh_game_obj = Flag2Country(filename=filename, country_deck=loaded_deck)
+                                menu_obj.state = "PlayFlag2Country"
+                                return fresh_game_obj
                             count += 1
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            self.state = "ResumeGameMenu"
+                            menu_obj.state = "ResumeGameMenu"
                             return
                         if QUIT_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            pygame.quit()
-                            sys.exit()
+                            Flag2CountryMixin.quit_game(None, None)
 
             pygame.display.update()
             clock.tick(target_fps)
 
 
 def mainloop():
-    while GAME_OBJEKT.state != "Close":
-        if GAME_OBJEKT.state == "StartMenu":
-            GAME_OBJEKT.start_menu()
-        elif GAME_OBJEKT.state == "NewGameMenu":
-            GAME_OBJEKT.new_game_menu()
-        elif GAME_OBJEKT.state == "CreateGameMenu":
-            GAME_OBJEKT.create_game_name()
-        elif GAME_OBJEKT.state == "ResumeGameMenu":
-            GAME_OBJEKT.resume_game_menu()
-        elif GAME_OBJEKT.state == "SavedGamesMenu":
-            GAME_OBJEKT.saved_games_menu()
-        elif GAME_OBJEKT.state == "SettingsMenu":
-            GAME_OBJEKT.settings_menu()
-        elif GAME_OBJEKT.state == "PlayFlag2Country":
-            GAME_OBJEKT.flag2country_quiz()
-        elif GAME_OBJEKT.state == "Flag2CountryWrongA":
-            GAME_OBJEKT.false_answer_screen()
-        elif GAME_OBJEKT.state == "Flag2CountryRightA":
-            GAME_OBJEKT.true_answer_screen()
+    while menu_obj.state != "Close":
+        if menu_obj.state == "StartMenu":
+            menu_obj.start_menu()
+        elif menu_obj.state == "NewGameMenu":
+            menu_obj.new_game_menu()
+        elif menu_obj.state == "ResumeGameMenu":
+            menu_obj.resume_game_menu()
+        elif menu_obj.state == "CompetitiveModeMenu":
+            PVP_GAME_OBJ = menu_obj.competitive_mode_menu()
+
+        elif menu_obj.state == "SettingsMenu":
+            menu_obj.settings_menu()
+
+        elif menu_obj.state == "CreateGameMenu":
+            GAME_OBJ = menu_obj.create_game_name()
+        elif menu_obj.state == "SavedGamesMenu":
+            GAME_OBJ = menu_obj.saved_games_menu()
+
+        elif menu_obj.state == "PlayFlag2Country":
+            GAME_OBJ.flag2country_quiz()
+        elif menu_obj.state == "Flag2CountryWrongA":
+            GAME_OBJ.false_answer_screen()
+        elif menu_obj.state == "Flag2CountryRightA":
+            GAME_OBJ.true_answer_screen()
+
+        elif menu_obj.state == "PVP":
+            PVP_GAME_OBJ.draw_screen()
+        elif menu_obj.state == "EndScreen":
+            PVP_GAME_OBJ.end_screen()
 
 
 if __name__ == "__main__":
-    GAME_OBJEKT = Flag2Country()
+    menu_obj = Menu("0.1")
     mainloop()
