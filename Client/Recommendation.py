@@ -1,6 +1,6 @@
-import random
 import json
 import os
+import random
 
 
 class Flashcard:
@@ -72,10 +72,10 @@ class FlashcardDeck:
         with open(file_path, "w") as json_file:
             json.dump(obj, json_file, default=self.flashcard_encoder, indent=4)
 
-    def read_from_json(self, filename):
-        file_path = os.path.join("saves", filename)
+    @staticmethod
+    def read_from_json(file_path):
         with open(file_path, "r") as json_file:
-            loaded_data = json.load(json_file, object_hook=self.flashcard_decoder)
+            loaded_data = json.load(json_file, object_hook=FlashcardDeck.flashcard_decoder)
             return loaded_data
 
     @staticmethod
