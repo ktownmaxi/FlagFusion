@@ -107,13 +107,18 @@ def handle_client(conn, addr, pvp_server_obj):
                 conn.send(element_count)
 
         if msg_type == '6':  # starting 1vs1 mode
-            print("pvp mode")
-            pvp_server_obj.player_list.append(conn)
+            if conn not in pvp_server_obj.player_list:
+                pvp_server_obj.player_list.append(conn)
             if pvp_server_obj.check_player_count():
                 pvp_server_obj.setup()
+            while not pvp_server_obj.player_ready:
+                if pvp_server_obj.player_ready:
+                    continue
+            while pvp_server_obj.player_ready:
+                pvp_server_obj.recv_score(conn)
 
         if msg_type == '7':
-            if addr in pvp_server_obj.player_list:
+            if conn in pvp_server_obj.player_list:
                 pvp_server_obj.player_list.remove(conn)
             connected = False
     print("Connection closed")
