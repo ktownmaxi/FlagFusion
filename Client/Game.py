@@ -506,7 +506,7 @@ class Flag2Country(Flag2CountryMixin):
 class PvP_Flag2country(Flag2CountryMixin):
     def __init__(self):
         super().__init__(0.1)
-        self.set_time = 60
+        self.set_time = 10
         self.player_list = []
         self.list_of_chosen_countries = []
         self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
@@ -515,6 +515,7 @@ class PvP_Flag2country(Flag2CountryMixin):
         self.old_question_counter_value = self.question_counter
         self.score, self.score_other_player = 0, 0
         self.right_question_counter, self.other_player_right_question_counter = 0, 0
+        self.won = None
 
     def increase_score_and_rquestion_counter(self, increase_value=1):
         self.score += increase_value
@@ -686,6 +687,19 @@ class PvP_Flag2country(Flag2CountryMixin):
                     True, WHITE)
                 TIMER_RECT = TIMER_TEXT.get_rect(center=(window_width / 2 + window_width / 3,
                                                          window_height / 2 + window_height / 4))
+
+                if time_display == 0:
+                    if self.score > self.score_other_player:
+                        self.won = True
+                        client_conn.sendDisconnect()
+                        menu_obj.state = "EndScreen"
+                        return
+                    else:
+                        self.won = False
+                        client_conn.sendDisconnect()
+                        menu_obj.state = "EndScreen"
+                        return
+
                 SCREEN.blit(TIMER_TEXT, TIMER_RECT)
                 SCREEN.blit(PLAYERS_SCORE, PLAYERS_SCORE_RECT)
                 if "RIGHT_ANSWER_P" in locals():
@@ -829,6 +843,48 @@ class PvP_Flag2country(Flag2CountryMixin):
                 if event.type == pygame.USEREVENT:
                     pygame.mixer.music.load(os.path.join('assets/music', music_manager_obj.get_next_song()))
                     pygame.mixer.music.play()
+
+            pygame.display.update()
+            clock.tick(target_fps)
+
+    def end_screen(self):
+
+        while True:
+            MOUSE_POS = pygame.mouse.get_pos()
+            SCREEN.blit(BG, (0, 0))
+
+            if self.won:
+                TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
+                    "YOU WON",
+                    True, "#f1f25f")
+                MENU_RECT = TEXT.get_rect(center=(window_width / 2, window_height / 3))
+
+            else:
+                TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.12)).render(
+                    "YOU LOST",
+                    True, "#f1f25f")
+                MENU_RECT = TEXT.get_rect(center=(window_width / 2, window_height / 3))
+
+            RETURN_BUTTON = Button(image=None,
+                                   pos=(window_width / 2, window_height / 2 + window_height / 3),
+                                   text_input="RETURN TO MENU",
+                                   font=helper.get_font(helper.calculate_font_size(window_width, window_height, 0.08)),
+                                   base_color="White", hovering_color="#dadddd")
+
+            SCREEN.blit(TEXT, MENU_RECT)
+
+            for button in [RETURN_BUTTON]:
+                button.changeColor(MOUSE_POS)
+                button.update(SCREEN)
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    Flag2CountryMixin.quit_game(None, None)
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if RETURN_BUTTON.checkForInput(MOUSE_POS):
+                            menu_obj.state = "StartMenu"
+                            return
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -1555,6 +1611,8 @@ def mainloop():
 
         elif menu_obj.state == "PVP":
             PVP_GAME_OBJ.draw_screen()
+        elif menu_obj.state == "EndScreen":
+            PVP_GAME_OBJ.end_screen()
 
 
 if __name__ == "__main__":
