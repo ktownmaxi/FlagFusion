@@ -29,7 +29,6 @@ pygame.display.set_caption("Flag Quest")
 BG_img = pygame.image.load("assets/Background.jpg")
 BG = pygame.transform.scale(BG_img, (window_width, window_height))
 
-# global sounds
 CLICK_SOUND = pygame.mixer.Sound('assets/tones/click.mp3')
 
 BLACK = (0, 0, 0)
@@ -51,6 +50,9 @@ pygame.mixer.music.play()
 
 
 class Flag2CountryMixin:
+    """
+    Class to share functions and variables between classes.
+    """
     def __init__(self, game_version):
         self.country_deck = None
         self.country_name = None
@@ -60,14 +62,28 @@ class Flag2CountryMixin:
         self.random_countries = []
 
     @staticmethod
-    def quit_game(client_conn, client_bol):
+    def quit_game(client_conn: client.ClientConnection, client_bol: bool):
+        """
+        Method to safely quit the game
+        :param client_conn: Client class to disconnect from the server.
+        :param client_bol: boolean to check if the client is connected to the server.
+        :return:
+        """
         if client_bol:
-            client_conn.sendDisconnect()
+            try:
+                client_conn.sendDisconnect()
+            except socket.error:
+                pass
         pygame.quit()
         sys.exit()
 
     @staticmethod
-    def detect_duplicates(my_list):
+    def detect_duplicates(my_list: list) -> bool:
+        """
+        Method to detect duplicates in a list.
+        :param my_list: list which should be checked for duplicates.
+        :return: Boolean if duplicate was detected
+        """
         duplicates = False
         for value in my_list:
             if my_list.count(value) > 1:
@@ -78,6 +94,11 @@ class Flag2CountryMixin:
 
     @staticmethod
     def run_once(func):
+        """
+        Decorator to only run a function once
+        :param func: function which should be run once
+        :return: returns the wrapper
+        """
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if not wrapper.has_run:
@@ -89,6 +110,13 @@ class Flag2CountryMixin:
 
     @staticmethod
     def assign_pos(obj, pos_list, pos_count=0):
+        """
+        Method to assign random positions to a pos_ variable
+        :param obj: class instance on which the pos_ variable should be written
+        :param pos_list: list with possible positions to which can be assigned to pos_
+        :param pos_count: ---
+        :return:
+        """
         if not pos_list:
             return
 
@@ -101,7 +129,13 @@ class Flag2CountryMixin:
         Flag2CountryMixin.assign_pos(obj, pos_list, pos_count)
 
     @staticmethod
-    def find_country_from_pic_name(file_name, data_path):
+    def find_country_from_pic_name(file_name: str, data_path: str) -> str:
+        """
+        Method to find a country from its picture name in a json file
+        :param file_name: name of the file which name should be searched
+        :param data_path: path of the json file
+        :return: returns the country name
+        """
         with open(data_path, 'r') as file:
             data = json.load(file)
 
@@ -109,7 +143,11 @@ class Flag2CountryMixin:
             if file_name in card["value"]:
                 return card["value"][0]
 
-    def value_generator(self, child_obj):
+    def value_generator(self):
+        """
+        Method to generate the values for playing the flag guessing game
+        :return:
+        """
         detect_duplicate_list = []
         list_of_chosen_countries = []
         self.card = self.country_deck.get_next_value()
@@ -127,11 +165,15 @@ class Flag2CountryMixin:
         duplicate = Flag2CountryMixin.detect_duplicates(detect_duplicate_list)
 
         if duplicate:
-            self.value_generator(child_obj)
+            self.value_generator()
         else:
             return list_of_chosen_countries
 
     def create_game_deck_generation(self):
+        """
+        Method to create a game deck to save scores
+        :return:
+        """
         if self.country_deck is not None:
             return
 
@@ -152,7 +194,11 @@ class Flag2CountryMixin:
                 self.country_deck.add_card(country)
             return
 
-    def try_connect_to_server(self):
+    def try_connect_to_server(self) -> tuple:
+        """
+        Method to try connection to the server.
+        :return: returns an instance of Client Connection or non, and a bool which describes if the process was a success.
+        """
         try:
             client_conn = client.ClientConnection(server_ip, self.game_version)
             server_connection_state = True
@@ -171,7 +217,7 @@ class Flag2Country(Flag2CountryMixin):
     start_time = None
     elapsed_time = 0
 
-    def __init__(self, country_deck=None, streak=0, filename=f"Gamesave_ID_1{formatted_datetime}.json",
+    def __init__(self, country_deck=None, streak=0, filename=f"Game_save_ID_1{formatted_datetime}.json",
                  scroll_speed=10):
         super().__init__(0.1)
         self.country_deck = country_deck
@@ -1356,7 +1402,7 @@ class Menu(Flag2CountryMixin):
             MUSIK_VOLUME_BAR.update(SCREEN, GRAY, GREEN)
             if pygame.mouse.get_pressed()[0]:
                 if MUSIK_VOLUME_BAR.checkForInput(MOUSE_POS):
-                    MUSIK_VOLUME_BAR.setbar(MOUSE_POS, window_width)
+                    MUSIK_VOLUME_BAR.set_bar(MOUSE_POS, window_width)
                     pygame.mixer.music.set_volume(MUSIK_VOLUME_BAR.get_volume())
 
             for button in [WINDOW_SIZE_DROPDOWN, FPS_DROPDOWN, CHECK_FOR_UPDATE_BUTTON]:
@@ -1560,7 +1606,6 @@ class Menu(Flag2CountryMixin):
                         count = 0
                         for button in button_obj_list:
                             x, y = button_pos[count]
-                            #  button.x_pos = x - self.scroll_x
                             button.y_pos = y - self.scroll_y
                             if button.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()

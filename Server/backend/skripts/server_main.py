@@ -17,7 +17,15 @@ server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(ADDR)
 
 
-def handle_client(conn, addr, pvp_server_obj):
+def handle_client(conn: socket.socket, addr: socket.socket, pvp_server_obj: pvp.Server_side_pvp):
+    """
+    Handels communication between clients and the server.
+    :param conn: Connection to send to and receive data from
+    :param addr: Address for data purposes
+    :param pvp_server_obj: Class object to manage the communication between server and clients in the 1v1 mode
+    :return:
+    """
+
     print(f"New Connection {addr} connected.")
     connected = True
     while connected:
@@ -91,7 +99,7 @@ def handle_client(conn, addr, pvp_server_obj):
                     msg_length = len(filename_bytes)
                     msg_length_header = f"{msg_length:<{HEADER}}".encode()
                     conn.send(msg_length_header)
-                    conn.send(filename_bytes)  # Sends the filenames to the server
+                    conn.send(filename_bytes)
 
                     file_path = os.path.join(directory_path, file)
                     with open(file_path, 'r') as reading_file:
@@ -125,18 +133,27 @@ def handle_client(conn, addr, pvp_server_obj):
     conn.close()
 
 
-def recv_data(conn, msg_length):
+def recv_data(conn: socket, msg_length: int) -> str:
+    """
+        Method to make receiving data more stable.
+        :param conn: connection from which we want to receive.
+        :param int msg_length: length of the msg in bytes.
+        :returns: the not decoded msg in binary.
+        :rtype: str.
+        """
+
     msg = b""
     while len(msg) < msg_length:
         chunk = conn.recv(msg_length - len(msg))
         if not chunk:
-            # Connection closed or data lost
             break
         msg += chunk
     return msg
 
 
 def start():
+    """Starts the server and does all steps needed to accept new clients"""
+
     server.listen(2)
     print(f"Server Local IP {SERVER}")
     pvp_server = pvp.Server_side_pvp(server)
