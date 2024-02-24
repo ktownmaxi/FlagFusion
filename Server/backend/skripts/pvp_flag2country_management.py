@@ -136,7 +136,10 @@ class Server_side_pvp:
         :return:
         """
         score = client_obj.recv(1024).decode()
-        self.send_score(client_obj, int(score))
+        try:
+            self.send_score(client_obj, int(score))
+        except ValueError:
+            self.send_score(client_obj, int(0))
 
     def send_score(self, client_obj: socket, score: int):
         """

@@ -1,3 +1,5 @@
+from socket import socket
+import functools
 import pygame
 
 
@@ -22,3 +24,38 @@ def calculate_font_size(window_width_: int, window_height_: int, font_size_facto
     font_size = int(min(window_width_,
                         window_height_) * font_size_factor)
     return font_size
+
+
+def recv_data(conn: socket, msg_length: int) -> str:
+    """
+            Method to make receiving data more stable.
+            :param conn: connection from which we want to receive.
+            :param int msg_length: length of the msg in bytes.
+            :returns: the not decoded msg in binary.
+            :rtype: str.
+            """
+
+    msg = b""
+    while len(msg) < msg_length:
+        chunk = conn.recv(msg_length - len(msg))
+        if not chunk:
+            # Connection closed or data lost
+            break
+        msg += chunk
+    return msg
+
+def run_once(func):
+    """
+    Decorator to only run a function once
+    :param func: function which should be run once
+    :return: returns the wrapper
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if not wrapper.has_run:
+            wrapper.has_run = True
+            return func(*args, **kwargs)
+
+    wrapper.has_run = False
+    return wrapper

@@ -3,6 +3,7 @@ import pickle
 import socket
 
 import pvp_flag2country_to_server_communication as pvp_conn_imp
+from helper import recv_data
 
 HEADER = 64
 FORMAT = 'utf-8'
@@ -28,25 +29,6 @@ class ClientConnection:
         self.client.connect(self.ADDR)
         self.game_version = game_version
 
-    @staticmethod
-    def recv_data(conn: socket, msg_length: int) -> str:
-        """
-                Method to make receiving data more stable.
-                :param conn: connection from which we want to receive.
-                :param int msg_length: length of the msg in bytes.
-                :returns: the not decoded msg in binary.
-                :rtype: str.
-                """
-
-        msg = b""
-        while len(msg) < msg_length:
-            chunk = conn.recv(msg_length - len(msg))
-            if not chunk:
-                # Connection closed or data lost
-                break
-            msg += chunk
-        return msg
-
     def checkUpdate(self) -> bool:
         """
         Client sided method to check if a new game version is online.
@@ -65,7 +47,7 @@ class ClientConnection:
         msg_length_header = self.client.recv(HEADER)
         msg_length = int(msg_length_header.decode().strip())
         if msg_length:
-            msg = self.recv_data(self.client, msg_length)
+            msg = recv_data(self.client, msg_length)
             data = pickle.loads(msg)
             if data:
                 print("Everything up to date")
@@ -133,7 +115,7 @@ class ClientConnection:
         else:
             print("You haven't any Backup data")
 
-    def pvpMode(self, client_obj) -> pvp_conn_imp.WithServerCommunicationClient:
+    def pvpMode(self, client_obj):
         """
         Client sided method to start the communication between the client and the server in the 1v1 mode.
         :param client_obj: Object of the ClientCommunication class.

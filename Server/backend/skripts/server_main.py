@@ -133,6 +133,13 @@ def handle_client(conn: socket.socket, addr: socket.socket, pvp_server_obj: pvp.
     conn.close()
 
 
+def SyncHighscore():
+    """
+    Meth
+    :return:
+    """
+    pass
+
 def recv_data(conn: socket, msg_length: int) -> str:
     """
         Method to make receiving data more stable.

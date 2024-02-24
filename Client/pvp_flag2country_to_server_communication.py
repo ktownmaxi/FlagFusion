@@ -1,8 +1,7 @@
 import pickle
 import queue
 
-import Game
-from client import ClientConnection
+from helper import recv_data, run_once
 
 HEADER = 64
 
@@ -18,7 +17,7 @@ class WithServerCommunicationClient:
         """
         self.client_obj = client_objekt
 
-    @Game.Flag2CountryMixin.run_once
+    @run_once
     def recv_flag_list(self) -> list:
         """
         Method to receive a list of flags from the server.
@@ -27,7 +26,7 @@ class WithServerCommunicationClient:
         msg_length_header = self.client_obj.recv(HEADER)
         msg_length = int(msg_length_header.decode().strip())
         if msg_length:
-            data = ClientConnection.recv_data(self.client_obj, msg_length)
+            data = recv_data(self.client_obj, msg_length)
             enc_data = pickle.loads(data)
             return enc_data
 
@@ -39,7 +38,7 @@ class WithServerCommunicationClient:
         msg_length_header = self.client_obj.recv(HEADER)
         msg_length = int(msg_length_header.decode().strip())
         if msg_length:
-            data = ClientConnection.recv_data(self.client_obj, msg_length)
+            data = recv_data(self.client_obj, msg_length)
             enc_data = pickle.loads(data)
             return enc_data
 

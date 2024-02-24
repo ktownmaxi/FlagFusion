@@ -1,5 +1,4 @@
 import datetime
-import functools
 import json
 import os
 import queue
@@ -14,7 +13,6 @@ import pygame.time
 
 import MusicManager
 import Recommendation
-from Client import client
 from button import *
 
 pygame.init()
@@ -40,7 +38,7 @@ RED = (255, 0, 0)
 target_fps = 30
 clock = pygame.time.Clock()
 
-server_ip = '192.168.178.45'
+server_ip = '192.168.178.86'
 
 music_manager_obj = MusicManager.MusicManager()
 next_song = music_manager_obj.get_next_song()
@@ -53,6 +51,7 @@ class Flag2CountryMixin:
     """
     Class to share functions and variables between classes.
     """
+
     def __init__(self, game_version):
         self.country_deck = None
         self.country_name = None
@@ -62,7 +61,7 @@ class Flag2CountryMixin:
         self.random_countries = []
 
     @staticmethod
-    def quit_game(client_conn: client.ClientConnection, client_bol: bool):
+    def quit_game(client_conn=None, client_bol: bool = None):
         """
         Method to safely quit the game
         :param client_conn: Client class to disconnect from the server.
@@ -91,22 +90,6 @@ class Flag2CountryMixin:
             else:
                 pass
         return duplicates
-
-    @staticmethod
-    def run_once(func):
-        """
-        Decorator to only run a function once
-        :param func: function which should be run once
-        :return: returns the wrapper
-        """
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            if not wrapper.has_run:
-                wrapper.has_run = True
-                return func(*args, **kwargs)
-
-        wrapper.has_run = False
-        return wrapper
 
     @staticmethod
     def assign_pos(obj, pos_list, pos_count=0):
@@ -199,6 +182,7 @@ class Flag2CountryMixin:
         Method to try connection to the server.
         :return: returns an instance of Client Connection or non, and a bool which describes if the process was a success.
         """
+        import client
         try:
             client_conn = client.ClientConnection(server_ip, self.game_version)
             server_connection_state = True
@@ -260,7 +244,7 @@ class Flag2Country(Flag2CountryMixin):
                            (window_width / 2 + window_width / 15, window_height / 2 + window_height / 4)]
 
         self.create_game_deck_generation()
-        self.random_countries = self.value_generator(self)
+        self.random_countries = self.value_generator()
         self.assign_pos(obj=self, pos_list=answer_pos_list)
         self.elapsed_time = 0
         self.start_time = None
@@ -552,7 +536,7 @@ class Flag2Country(Flag2CountryMixin):
 class PvP_Flag2country(Flag2CountryMixin):
     def __init__(self):
         super().__init__(0.1)
-        self.set_time = 10
+        self.set_time = 100
         self.player_list = []
         self.list_of_chosen_countries = []
         self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
@@ -563,7 +547,7 @@ class PvP_Flag2country(Flag2CountryMixin):
         self.right_question_counter, self.other_player_right_question_counter = 0, 0
         self.won = None
 
-    def increase_score_and_rquestion_counter(self, increase_value=1):
+    def increase_score_and_question_counter(self, increase_value=1):
         self.score += increase_value
         self.right_question_counter += 1
 
@@ -633,7 +617,7 @@ class PvP_Flag2country(Flag2CountryMixin):
                         self.flag_list = to_server_comm_obj.recv_flag_list()
                         run_once_bool = False
                     if self.check_if_question_counter_increased():
-                        answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),  # 1 top left
+                        answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),
                                            (window_width / 2, window_height / 2),
                                            (window_width / 2 - window_width / 2.125,
                                             window_height / 2 + window_height / 4),
@@ -821,26 +805,26 @@ class PvP_Flag2country(Flag2CountryMixin):
                     if event.key == pygame.K_1:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 - window_width / 2.125, window_height / 2):
-                            CLICK_SOUND.play()  # Wenn Button 4 oben links (pos1(gedrückte taste)) ist dann -
-                            self.increase_score_and_rquestion_counter()
+                            CLICK_SOUND.play()
+                            self.increase_score_and_question_counter()
                             self.increase_question_counter()
                     if event.key == pygame.K_2:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 + window_width / 15, window_height / 2):
                             CLICK_SOUND.play()
-                            self.increase_score_and_rquestion_counter()
+                            self.increase_score_and_question_counter()
                             self.increase_question_counter()
                     if event.key == pygame.K_3:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
-                            self.increase_score_and_rquestion_counter()
+                            self.increase_score_and_question_counter()
                             self.increase_question_counter()
                     if event.key == pygame.K_4:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 + window_width / 15, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
-                            self.increase_score_and_rquestion_counter()
+                            self.increase_score_and_question_counter()
                             self.increase_question_counter()
                     if event.type != pygame.KEYDOWN or event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4]:
                         CLICK_SOUND.play()
@@ -871,7 +855,7 @@ class PvP_Flag2country(Flag2CountryMixin):
                                 self.increase_question_counter()
                             if answer_4.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()
-                                self.increase_score_and_rquestion_counter()
+                                self.increase_score_and_question_counter()
                                 self.increase_question_counter()
 
                         if server_connection_state is True and search_for_player is True:
@@ -1386,10 +1370,8 @@ class Menu(Flag2CountryMixin):
                                         base_color="White", hovering_color="#dadddd")
 
             SEND_BACKUP_BUTTON = ImageButton(UPLOAD_TR, (
-                window_width / 1.4, window_height / 2 - window_height / 8 - self.scroll_y),
-                                             UPLOAD_TR)
-            LOAD_BACKUP_BUTTON = ImageButton(LOAD_TR, (window_width / 1.4, window_height / 2 - self.scroll_y),
-                                             LOAD_TR)
+                window_width / 1.4, window_height / 2 - window_height / 8 - self.scroll_y))
+            LOAD_BACKUP_BUTTON = ImageButton(LOAD_TR, (window_width / 1.4, window_height / 2 - self.scroll_y))
 
             MUSIK_VOLUME_BAR.bar_y = window_height / 2 + window_height / 8 - self.scroll_y
 
