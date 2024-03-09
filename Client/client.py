@@ -1,127 +1,67 @@
-import os
-import pickle
-import socket
+import os.path
+import zipfile
+import io
+from glob import glob
 
-import pvp_flag2country_to_server_communication as pvp_conn_imp
-from helper import recv_data
+import requests
 
-HEADER = 64
-FORMAT = 'utf-8'
-DISCONNECT_MESSAGE = "!DISCONNECT"
+BASE = "http://127.0.0.1:5000/"
+headers_json, headers_zip = {"Content-Type": "application/json"}, {"Content-Type": "application/zip"}
 
 
-class ClientConnection:
-    """
-    Client side class to manage communication between client and server.
-    """
+def get_in_queue_and_get_matchmaking_status():
+    response = requests.put(BASE + "matchmaking")
+    matchmaking_status = response.json()["started_matchmaking"]
+    if response.json()["player_id"]:
+        player_id = response.json()["player_id"]
+    else:
+        player_id = None
+    return matchmaking_status, player_id
 
-    def __init__(self, server_ip, game_version, port=5050):
-        """
-        Initializes variables needed to connect to the server.
-        :param server_ip: IP of the server.
-        :param game_version: Version of the game.
-        :param port: Port form which to communicate from.
-        """
-        self.SERVER = server_ip
-        self.PORT = port
-        self.ADDR = (self.SERVER, self.PORT)
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.connect(self.ADDR)
-        self.game_version = game_version
 
-    def checkUpdate(self) -> bool:
-        """
-        Client sided method to check if a new game version is online.
-        :return: Boolean which tells if a new version is up.
-        """
-        send_msg_type = str(3).encode()
-        self.client.send(send_msg_type)
+def only_get_matchmaking_status(player_id):
+    response = requests.get(BASE + "matchmaking", json={"player_id": player_id})
+    matchmaking_status = response.json()["started_matchmaking"]
+    return matchmaking_status
 
-        game_version_pickle = pickle.dumps(self.game_version)
-        msg_length = len(game_version_pickle)
-        msg_length_header = f"{msg_length:<{HEADER}}".encode()
 
-        self.client.send(msg_length_header)
-        self.client.send(game_version_pickle)
+def get_current_game_version():
+    response = requests.get(BASE + "update")
+    gversion = response.json()["gversion"]
+    return gversion
 
-        msg_length_header = self.client.recv(HEADER)
-        msg_length = int(msg_length_header.decode().strip())
-        if msg_length:
-            msg = recv_data(self.client, msg_length)
-            data = pickle.loads(msg)
-            if data:
-                print("Everything up to date")
-                return True
-            else:
-                print("your Application needs a update")
-                return False
 
-    def sendDisconnect(self):
-        """
-        Client sided method to send a msg to the server to disconnect
-        :return:
-        """
-        send_msg_type = str(7).encode()
-        self.client.send(send_msg_type)
+def get_backup():
+    response = requests.get(BASE + "backup", headers=headers_json)
+    if response.status_code == 200:
+        with zipfile.ZipFile(io.BytesIO(response.content), 'r') as zip_ref:
+            zip_ref.extractall(os.path.join("saves"))
 
-    def backupGames(self):
-        """
-        Client sided communication method to back up games from the local disk to the cloud
-        :return:
-        """
-        for file in os.listdir('saves'):
-            send_msg_type = str(4).encode()
-            self.client.send(send_msg_type)
 
-            filename_bytes = str(file).encode()
-            msg_length = len(filename_bytes)
-            msg_length_header = f"{msg_length:<{HEADER}}".encode()
-            self.client.send(msg_length_header)
-            self.client.send(filename_bytes)
+def post_backup():  # Not finished
+    extract_path = os.path.join("saves")
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as zf:
+        for file in glob(os.path.join(extract_path, "*.json")):
+            zf.write(file, os.path.basename(file))
+    stream.seek(0)
+    response = requests.post(BASE + "backup", headers=headers_zip, files={'file': ('downloaded_files.zip', stream)})
+    return response
 
-            file_path = os.path.join('saves', file)
-            with open(file_path, 'r') as reading_file:
-                data = reading_file.read()
-                data_bytes = data.encode()
-                msg_length = len(data_bytes)
-                msg_length_header = f"{msg_length:<{HEADER}}".encode()
-                self.client.send(msg_length_header)
-                self.client.send(data_bytes)
 
-    def loadBackup(self):
-        """
-        Client sided communication method to load back up the games to the local disk from the cloud.
-        :return:
-        """
-        send_msg_type = str(5).encode()
-        self.client.send(send_msg_type)
-        element_count = self.client.recv(8).decode()
+def get_country_list():
+    response = requests.get(BASE + "communicationAPI")
+    return response.json()
 
-        saves_dir_path = os.path.join('saves')
 
-        if int(element_count) > 0:
-            for i in range(0, int(element_count)):
-                msg_length_header = self.client.recv(HEADER)
-                msg_length = int(msg_length_header.decode().strip())
-                filename = self.client.recv(msg_length).decode()
-                file_path = os.path.join(saves_dir_path, filename)
+def patch_score_to_api(current_score, current_acc, player_id):
+    response = requests.patch(BASE + "communicationAPI", json={"score": current_score, "acc": current_acc,
+                                                               "id": player_id})
+    score, acc, finished = response.json()["score"], response.json()["acc"], response.json()["game_finished"]
+    return score, acc, finished
 
-                msg_length_header = self.client.recv(HEADER)
-                msg_length = int(msg_length_header.decode().strip())
-                data = self.client.recv(msg_length).decode()
 
-                with open(file_path, 'w') as file:
-                    file.write(data)
-        else:
-            print("You haven't any Backup data")
+def post_finish(player_id):
+    response = requests.post(BASE + "communicationAPI", json={"game_finished": True, "player_id": player_id})
 
-    def pvpMode(self, client_obj):
-        """
-        Client sided method to start the communication between the client and the server in the 1v1 mode.
-        :param client_obj: Object of the ClientCommunication class.
-        :return: An object to communicate with the server in the 1v1 mode
-        """
-        send_msg_type = str(6).encode()
-        self.client.send(send_msg_type)
-        communication_obj = pvp_conn_imp.WithServerCommunicationClient(client_obj)
-        return communication_obj
+    return response
