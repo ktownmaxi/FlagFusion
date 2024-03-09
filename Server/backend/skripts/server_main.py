@@ -1,175 +1,220 @@
+import json
+import random
+from glob import glob
+from io import BytesIO
+from zipfile import ZipFile
+
+from flask import Flask, send_from_directory, request, send_file, jsonify
+from flask_restful import Api, Resource, reqparse, fields, marshal_with, abort
+from flask_sqlalchemy import SQLAlchemy
 import os
-import pickle
-import socket
-import threading
+import queue
 
-import pvp_flag2country_management as pvp
+app = Flask(__name__)
+api = Api(app)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///player_data.db"
+db = SQLAlchemy(app)
 
-HEADER = 64
-PORT = 5050
-SERVER = socket.gethostbyname(socket.gethostname())
-ADDR = (SERVER, PORT)
-FORMAT = 'utf-8'
-DISCONNECT_MESSAGE = "!DISCONNECT"
-current_game_version = '0.1'
-
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind(ADDR)
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-def handle_client(conn: socket.socket, addr: socket.socket, pvp_server_obj: pvp.Server_side_pvp):
-    """
-    Handels communication between clients and the server.
-    :param conn: Connection to send to and receive data from
-    :param addr: Address for data purposes
-    :param pvp_server_obj: Class object to manage the communication between server and clients in the 1v1 mode
-    :return:
-    """
+class Datastorage(db.Model):
+    player_id = db.Column(db.Integer, primary_key=True)
+    player_score = db.Column(db.Integer, nullable=False)
+    player_acc = db.Column(db.Integer, nullable=False)
+    matched_player = db.Column(db.Integer, nullable=True)
+    game_finished = db.Column(db.Boolean, nullable=True)
 
-    print(f"New Connection {addr} connected.")
-    connected = True
-    while connected:
-        msg_type = conn.recv(1).decode(FORMAT)
-        if msg_type == '1':  # SyncHighscore
-            pass
-        if msg_type == '2':  # 1v1
-            pass
-        if msg_type == '3':  # checkUpdate
-            msg_length_header = conn.recv(HEADER)
-            msg_length = int(msg_length_header.decode().strip())
 
-            if msg_length:
-                data = recv_data(conn, msg_length)
-                data = pickle.loads(data)
+with app.app_context():
+    db.create_all()
 
-                if data == current_game_version:
-                    update_msg = pickle.dumps(True)
-                    msg_length = len(update_msg)
-                    msg_length_header = f"{msg_length:<{HEADER}}".encode()
-                    conn.send(msg_length_header)
-                    conn.send(update_msg)
-                else:
-                    update_msg = pickle.dumps(False)
-                    msg_length = len(update_msg)
-                    msg_length_header = f"{msg_length:<{HEADER}}".encode()
-                    conn.send(msg_length_header)
-                    conn.send(update_msg)
+player_queue = queue.Queue()
 
-        if msg_type == '4':  # Backup Games
-            path = f'backups/{addr[0]}'
-            directory_path = os.path.join(os.path.dirname(__file__), path)
 
-            if os.path.exists(directory_path):
-                msg_length_header = conn.recv(HEADER)
-                msg_length = int(msg_length_header.decode().strip())
-                filename = conn.recv(msg_length).decode()
-                file_path = os.path.join(directory_path, filename)
+class Matchmaking(Resource):
+    def put(self):
+        if player_queue.empty():
+            player_id = self.getID()
+            player_queue.put(player_id)
 
-                msg_length_header = conn.recv(HEADER)
-                msg_length = int(msg_length_header.decode().strip())
-                data = conn.recv(msg_length).decode()
+            new_entry = Datastorage(player_id=player_id, player_score=0, player_acc=100, game_finished=False)
+            db.session.add(new_entry)
+            db.session.commit()
 
-                with open(file_path, 'w') as file:
-                    file.write(data)
+            return {"started_matchmaking": False,
+                    "player_id": player_id}, 200
+        else:
+            player_2_id = self.getID()
+            player_1_id = player_queue.get()
 
+            new_entry = Datastorage(player_id=self.getID(), player_score=0, player_acc=100,
+                                    matched_player=player_1_id, game_finished=False)
+            db.session.add(new_entry)
+
+            player = Datastorage.query.filter_by(player_id=player_1_id).first()
+            if player is not None:
+                player.matched_player = player_2_id
+
+            db.session.commit()
+
+            return {"started_matchmaking": True,
+                    "player_id": player_2_id}, 200
+
+    def get(self):
+        matchmaking_status_args = reqparse.RequestParser()
+        matchmaking_status_args.add_argument("player_id", type=int, help="Player ID to identify Player")
+
+        args = matchmaking_status_args.parse_args()
+
+        player = Datastorage.query.filter_by(player_id=args["player_id"]).first()
+        if player and not player_queue.empty():
+            return {"started_matchmaking": False}, 200
+        if player and player_queue.empty():
+            return {"started_matchmaking": True}, 200
+        else:
+            return "Player not registered", 400
+
+    def getID(self):
+        match_id = db.session.query(Datastorage).count() + 1
+        return match_id
+
+
+class CommunicationAPI(Resource):
+
+    def __init__(self):
+
+        self.flag_file_names = self.read_json(os.path.join(current_dir, '..', 'resources', 'flag_name.json'))
+        self.final_flags = self.create_flag_list()
+
+        self.score_patch_args = reqparse.RequestParser()
+        self.score_patch_args.add_argument("score", type=int, help="Current score of the player")
+        self.score_patch_args.add_argument("acc", type=float, help="Accuracy of the questions")
+        self.score_patch_args.add_argument("id", type=float, help="Player ID - Required")
+
+    @staticmethod
+    def detect_duplicates(my_list: list) -> bool:
+        """
+        Method to detect duplicates in a given list.
+        :param my_list: list which should be checked on duplicates.
+        :return: returns a bool if a duplicate was detected
+        """
+        duplicates = False
+        for value in my_list:
+            if my_list.count(value) > 1:
+                duplicates = True
             else:
-                os.makedirs(directory_path)
-                msg_length_header = conn.recv(HEADER)
-                msg_length = int(msg_length_header.decode().strip())
-                filename = conn.recv(msg_length).decode()
-                file_path = os.path.join(directory_path, filename)
+                pass
+        return duplicates
 
-                msg_length_header = conn.recv(HEADER)
-                msg_length = int(msg_length_header.decode().strip())
-                data = conn.recv(msg_length).decode()
-
-                with open(file_path, 'w') as file:
-                    file.write(data)
-
-        if msg_type == '5':  # Load Games
-            path = f'backups/{addr[0]}'
-            directory_path = os.path.join(os.path.dirname(__file__), path)
-
-            if os.path.exists(directory_path):
-                element_count = str(len(os.listdir(directory_path))).encode()
-                conn.send(element_count)
-
-                for file in os.listdir(directory_path):
-                    filename_bytes = str(file).encode()
-                    msg_length = len(filename_bytes)
-                    msg_length_header = f"{msg_length:<{HEADER}}".encode()
-                    conn.send(msg_length_header)
-                    conn.send(filename_bytes)
-
-                    file_path = os.path.join(directory_path, file)
-                    with open(file_path, 'r') as reading_file:
-                        data = reading_file.read()
-                        data_bytes = data.encode()
-                        msg_length = len(data_bytes)
-                        msg_length_header = f"{msg_length:<{HEADER}}".encode()
-                        conn.send(msg_length_header)
-                        conn.send(data_bytes)
-
-            else:
-                element_count = str(0).encode()
-                conn.send(element_count)
-
-        if msg_type == '6':  # starting 1vs1 mode
-            if conn not in pvp_server_obj.player_list:
-                pvp_server_obj.player_list.append(conn)
-            if pvp_server_obj.check_player_count():
-                pvp_server_obj.setup()
-            while not pvp_server_obj.player_ready:
-                if pvp_server_obj.player_ready:
-                    continue
-            while pvp_server_obj.player_ready:
-                pvp_server_obj.recv_score(conn)
-
-        if msg_type == '7':
-            if conn in pvp_server_obj.player_list:
-                pvp_server_obj.player_list.remove(conn)
-            connected = False
-    print("Connection closed")
-    conn.close()
-
-
-def SyncHighscore():
-    """
-    Meth
-    :return:
-    """
-    pass
-
-def recv_data(conn: socket, msg_length: int) -> str:
-    """
-        Method to make receiving data more stable.
-        :param conn: connection from which we want to receive.
-        :param int msg_length: length of the msg in bytes.
-        :returns: the not decoded msg in binary.
-        :rtype: str.
+    @staticmethod
+    def read_json(json_file_path: str) -> dict:
+        """
+        Method to read a json file
+            :param path json_file_path: Path to find the json file.
+            :returns : Returns a Dictionary with the information from the file
+            :rtype : Returns a Dictionary
+            :raises anyError: if something goes wrong
         """
 
-    msg = b""
-    while len(msg) < msg_length:
-        chunk = conn.recv(msg_length - len(msg))
-        if not chunk:
-            break
-        msg += chunk
-    return msg
+        with open(json_file_path, 'r') as json_datei:
+            file = json.load(json_datei)
+            return file
+
+    def create_flag_list(self) -> list:
+        """
+        Method to create a list with 20 items of random flag file names
+        :return: a list of the chosen countries
+        """
+        final_countries = []
+        for i in range(0, 20):
+            random_country = random.choice(self.flag_file_names)
+            final_countries.append(random_country)
+        if self.detect_duplicates(final_countries):
+            self.create_flag_list()
+        return final_countries
+
+    def get(self):
+        return {"final_flags": self.final_flags}
+
+    def patch(self):
+        args = self.score_patch_args.parse_args()
+        player = None
+
+        if args["id"]:
+            player = Datastorage.query.filter_by(player_id=args["id"]).first()
+        if player is not None:
+            if args["score"]:
+                player.player_score = args["score"]
+            if args["acc"]:
+                player.player_acc = args["acc"]
+
+            db.session.commit()
+
+            sec_player_id = player.matched_player
+
+            if sec_player_id:
+                sec_player = Datastorage.query.filter_by(player_id=sec_player_id).first()
+                if sec_player:
+                    return {"score": sec_player.player_score, "acc": sec_player.player_acc,
+                            "game_finished": sec_player.game_finished}, 200
+
+    def post(self):
+        args_pars = reqparse.RequestParser()
+        args_pars.add_argument("game_finished", type=bool, help="Bool which indicates state of game")
+        args_pars.add_argument("player_id", type=int, help="Player ID to identify player in DB")
+
+        args = args_pars.parse_args()
+        if args["player_id"]:
+            player = Datastorage.query.filter_by(player_id=args["player_id"]).first()
+            if player is not None:
+                player.game_finished = True
+                db.session.commit()
+                return "State successfully set", 200
+            else:
+                return "Player not found in DB", 500
+        else:
+            return "Content not able to indentify", 400
 
 
-def start():
-    """Starts the server and does all steps needed to accept new clients"""
+class UpdateAPI(Resource):
+    def __init__(self):
+        self.game_version = 0.2
 
-    server.listen(2)
-    print(f"Server Local IP {SERVER}")
-    pvp_server = pvp.Server_side_pvp(server)
-    while True:
-        conn, addr = server.accept()
-        thread = threading.Thread(target=handle_client, args=(conn, addr, pvp_server))
-        thread.start()
-        print(f" Active Connections {threading.active_count() - 1}")
+    def get(self):
+        return {"gversion": self.game_version}
 
 
-print("Starting server is starting...!")
-start()
+class BackupFunctionAPI(Resource):
+    def __init__(self):
+        pass
+
+    def get(self):
+        path = fr'backups\{request.remote_addr}'
+        par_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+        directory_path = os.path.join(par_dir, path)
+
+        if os.path.exists(directory_path):
+            stream = BytesIO()
+            with ZipFile(stream, 'w') as zf:
+                for file in glob(os.path.join(directory_path, '*.json')):
+                    zf.write(file, os.path.basename(file))
+            stream.seek(0)
+            print("sent")
+            return send_file(
+                stream,
+                as_attachment=True,
+                download_name='downloaded_files.zip'
+            )
+
+    def post(self):
+        pass
+
+
+api.add_resource(Matchmaking, "/matchmaking")
+api.add_resource(CommunicationAPI, "/communicationAPI")
+api.add_resource(UpdateAPI, "/update")
+api.add_resource(BackupFunctionAPI, "/backup")
+
+if __name__ == "__main__":
+    app.run(debug=True)

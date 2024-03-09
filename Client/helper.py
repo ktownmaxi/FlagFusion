@@ -1,6 +1,7 @@
 from socket import socket
 import functools
 import pygame
+import time
 
 
 def get_font(size: int, font_location: str = "assets/font.ttf") -> pygame.font.Font:
@@ -44,6 +45,7 @@ def recv_data(conn: socket, msg_length: int) -> str:
         msg += chunk
     return msg
 
+
 def run_once(func):
     """
     Decorator to only run a function once
@@ -58,4 +60,26 @@ def run_once(func):
             return func(*args, **kwargs)
 
     wrapper.has_run = False
+    return wrapper
+
+
+def run_once_a_second(func):
+    """
+    Decorator for only run a function once a second
+    :param func: function which should be run at max once a second
+    :return: returns the wrapper
+    """
+    last_execution_time = 0
+
+    def wrapper(*args, **kwargs):
+        nonlocal last_execution_time
+
+        current_time = time.time()
+        time_since_last_execution = current_time - last_execution_time
+
+        if time_since_last_execution >= 1:
+            result = func(*args, **kwargs)
+            last_execution_time = time.time()
+            return result
+
     return wrapper

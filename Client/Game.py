@@ -1,18 +1,17 @@
 import datetime
 import json
 import os
-import queue
 import random
-import socket
 import sys
-import threading
 
 import pycountry
 import pycountry_convert
 import pygame.time
+import requests
 
 import MusicManager
 import Recommendation
+from FlagGame.Client import client
 from button import *
 
 pygame.init()
@@ -61,18 +60,11 @@ class Flag2CountryMixin:
         self.random_countries = []
 
     @staticmethod
-    def quit_game(client_conn=None, client_bol: bool = None):
+    def quit_game():
         """
         Method to safely quit the game
-        :param client_conn: Client class to disconnect from the server.
-        :param client_bol: boolean to check if the client is connected to the server.
         :return:
         """
-        if client_bol:
-            try:
-                client_conn.sendDisconnect()
-            except socket.error:
-                pass
         pygame.quit()
         sys.exit()
 
@@ -176,21 +168,6 @@ class Flag2CountryMixin:
                 country = Recommendation.Flashcard([country_name, flag_code])
                 self.country_deck.add_card(country)
             return
-
-    def try_connect_to_server(self) -> tuple:
-        """
-        Method to try connection to the server.
-        :return: returns an instance of Client Connection or non, and a bool which describes if the process was a success.
-        """
-        import client
-        try:
-            client_conn = client.ClientConnection(server_ip, self.game_version)
-            server_connection_state = True
-            return client_conn, server_connection_state
-        except ConnectionRefusedError:
-            print("Server refused the connection")
-            server_connection_state = False
-            return None, server_connection_state
 
 
 class Flag2Country(Flag2CountryMixin):
@@ -312,7 +289,7 @@ class Flag2Country(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_1:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
@@ -430,7 +407,7 @@ class Flag2Country(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
 
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_SPACE:
@@ -508,7 +485,7 @@ class Flag2Country(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
 
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_SPACE:
@@ -541,11 +518,13 @@ class PvP_Flag2country(Flag2CountryMixin):
         self.list_of_chosen_countries = []
         self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
         self.flag_list = []
-        self.question_counter = 0
+        self.question_counter = -1
         self.old_question_counter_value = self.question_counter
         self.score, self.score_other_player = 0, 0
+        self.acc_other_player = 100
         self.right_question_counter, self.other_player_right_question_counter = 0, 0
-        self.won = None
+        self.won, self.game_finished = None, False
+        self.player_id = 0
 
     def increase_score_and_question_counter(self, increase_value=1):
         self.score += increase_value
@@ -598,24 +577,35 @@ class PvP_Flag2country(Flag2CountryMixin):
     def calculate_right_percentage(self, right_answer_count):
         return int(right_answer_count / max(1, self.question_counter - 1) * 100)
 
-    def draw_screen(self):
-        search_for_player = True
-        run_once_bool = True
-        client_conn, server_connection_state = self.try_connect_to_server()
-        if server_connection_state:
-            to_server_comm_obj = client_conn.pvpMode(client_conn.client)
-            check_player_thread = threading.Thread(target=to_server_comm_obj.recv_player_ready)
-            check_player_thread.start()
+    @helper.run_once_a_second
+    def update_score_and_acc(self):
+        self.score_other_player, self.acc_other_player, self.game_finished = (
+            client.patch_score_to_api(current_score=self.score, current_acc=self.calculate_right_percentage(self.right_question_counter),
+                                      player_id=self.player_id))
+        print(self.score_other_player, self.acc_other_player, self.game_finished)
 
+    def draw_screen(self):
         start_ticks = pygame.time.get_ticks()
+        server_connection_state, matched_players, run_once_bool = True, False, True
+        try:
+            matched_players, self.player_id = client.get_in_queue_and_get_matchmaking_status()
+        except requests.RequestException as e:
+            server_connection_state = False
+            print(f"Error: {e}")
 
         while True:
             if server_connection_state:
-                if not check_player_thread.is_alive():
-                    search_for_player = False
+                if not matched_players:
+                    matched_players = client.only_get_matchmaking_status(self.player_id)
+                if matched_players:
+                    self.update_score_and_acc()
                     if run_once_bool:
-                        self.flag_list = to_server_comm_obj.recv_flag_list()
+                        self.flag_list = client.get_country_list()["final_flags"]
+                        print(self.flag_list)
+                        self.check_if_question_counter_increased()
+                        self.increase_question_counter()
                         run_once_bool = False
+
                     if self.check_if_question_counter_increased():
                         answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),
                                            (window_width / 2, window_height / 2),
@@ -628,40 +618,16 @@ class PvP_Flag2country(Flag2CountryMixin):
 
                         RIGHT_ANSWER_P = helper.get_font(
                             helper.calculate_font_size(window_width, window_height, 0.03)).render(
-                            f"{self.calculate_right_percentage(max(0, self.right_question_counter))} % | {self.calculate_right_percentage(
-                                max(0, self.other_player_right_question_counter))} %",
+                            f"{self.calculate_right_percentage(max(0, self.right_question_counter))} % | {self.acc_other_player} %",
                             True, WHITE)
                         RIGHT_ANSWER_P_RECT = RIGHT_ANSWER_P.get_rect(
                             center=(window_width / 2 + window_width / 3,
                                     window_height / 2 - window_height / 4))
 
-                    if "send_and_recv_score" in locals() and send_and_recv_score.is_alive():
-                        pass
-                    if "send_and_recv_score" in locals() and not send_and_recv_score.is_alive():
-                        try:
-                            self.score_other_player = int(q.get(timeout=0))
-                        except queue.Empty:
-                            pass
-                        finally:
-                            q = queue.Queue()
-                            send_and_recv_score = threading.Thread(
-                                target=to_server_comm_obj.send_score_to_server,
-                                args=(self.score, q))
-                            send_and_recv_score.start()
-                    else:
-                        q = queue.Queue()
-                        send_and_recv_score = threading.Thread(target=to_server_comm_obj.send_score_to_server,
-                                                               args=(self.score, q))
-                        send_and_recv_score.start()
-                        try:
-                            self.score_other_player = int(q.get(timeout=0))
-                        except queue.Empty:
-                            pass
-
             self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 4, window_height / 4
             MOUSE_POS = pygame.mouse.get_pos()
 
-            if server_connection_state is True and search_for_player is False:
+            if server_connection_state is True and matched_players is True:
                 SCREEN.fill("#353a3c")
 
                 answer_1 = Button_xy_cords(image=None, pos=self.pos_1,
@@ -721,12 +687,10 @@ class PvP_Flag2country(Flag2CountryMixin):
                 if time_display == 0:
                     if self.score > self.score_other_player:
                         self.won = True
-                        client_conn.sendDisconnect()
                         menu_obj.state = "EndScreen"
                         return
                     else:
                         self.won = False
-                        client_conn.sendDisconnect()
                         menu_obj.state = "EndScreen"
                         return
 
@@ -750,7 +714,7 @@ class PvP_Flag2country(Flag2CountryMixin):
                     button.changeColor(MOUSE_POS)
                     button.update(SCREEN)
 
-            elif server_connection_state is True and search_for_player is True:
+            elif server_connection_state is True and matched_players is False:
                 SCREEN.fill("#353a3c")
 
                 INFORMATION_TEXT = helper.get_font(
@@ -799,7 +763,7 @@ class PvP_Flag2country(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(client_conn, True)
+                    Flag2CountryMixin.quit_game()
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_1:
@@ -833,12 +797,10 @@ class PvP_Flag2country(Flag2CountryMixin):
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if server_connection_state is True and search_for_player is False:
+                        if server_connection_state is True and matched_players is not False:
                             if SURRENDER_BUTTON.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()
                                 menu_obj.state = "StartMenu"
-                                if server_connection_state:
-                                    client_conn.sendDisconnect()
                                 return
 
                             if answer_1.checkForInput(MOUSE_POS):
@@ -858,13 +820,11 @@ class PvP_Flag2country(Flag2CountryMixin):
                                 self.increase_score_and_question_counter()
                                 self.increase_question_counter()
 
-                        if server_connection_state is True and search_for_player is True:
+                        if server_connection_state is True and matched_players is not True:
                             if LEAVE_QUEUE_BUTTON.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()
                                 menu_obj.state = "CompetitiveModeMenu"
-                                if server_connection_state:
-                                    client_conn.sendDisconnect()
-                                    return
+                                return
                         if server_connection_state is False:
                             if BACK_BUTTON.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()
@@ -909,7 +869,7 @@ class PvP_Flag2country(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if RETURN_BUTTON.checkForInput(MOUSE_POS):
@@ -983,7 +943,7 @@ class Menu(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if TRAINING_BUTTON.checkForInput(MENU_MOUSE_POS):
@@ -1004,7 +964,7 @@ class Menu(Flag2CountryMixin):
                             return
                         if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2CountryMixin.quit_game(None, None)
+                            Flag2CountryMixin.quit_game()
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -1050,7 +1010,7 @@ class Menu(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if PVAI_BUTTON.checkForInput(MENU_MOUSE_POS):
@@ -1066,7 +1026,7 @@ class Menu(Flag2CountryMixin):
                             return temp_game_obj
                         elif QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2CountryMixin.quit_game(None, None)
+                            Flag2CountryMixin.quit_game()
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -1113,7 +1073,7 @@ class Menu(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if FLAG2COUNTRY_BUTTON.checkForInput(MENU_MOUSE_POS):
@@ -1128,7 +1088,7 @@ class Menu(Flag2CountryMixin):
                             return
                         if QUIT_BUTTON.checkForInput(MENU_MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2CountryMixin.quit_game(None, None)
+                            Flag2CountryMixin.quit_game()
 
             pygame.display.update()
             clock.tick(target_fps)
@@ -1170,7 +1130,7 @@ class Menu(Flag2CountryMixin):
 
             for event in event:
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
@@ -1261,7 +1221,7 @@ class Menu(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
@@ -1270,7 +1230,7 @@ class Menu(Flag2CountryMixin):
                             return
                         elif QUIT_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2CountryMixin.quit_game(None, None)
+                            Flag2CountryMixin.quit_game()
                         elif SAVED_GAMES_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
                             menu_obj.state = "SavedGamesMenu"
@@ -1282,7 +1242,6 @@ class Menu(Flag2CountryMixin):
             clock.tick(target_fps)
 
     def settings_menu(self):
-        client_conn, server_connection_state = self.try_connect_to_server()
         global SCREEN, window_height, window_width, BG, target_fps
         Window_size_dropdown_state = False
         FPS_dropdown_state = False
@@ -1411,7 +1370,7 @@ class Menu(Flag2CountryMixin):
 
             current_time = pygame.time.get_ticks()
 
-            if current_time - start_time < 4500 and server_connection_state is False:
+            if current_time - start_time < 4500 and False is False:  # Need Fix
                 WARNING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
                     "SERVER REFUSED THE CONNECTION",
                     True, RED)
@@ -1421,7 +1380,7 @@ class Menu(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(client_conn, server_connection_state)
+                    Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 4:  # Mausrad nach oben
                         self.scroll_y -= self.scroll_speed * 2
@@ -1431,34 +1390,21 @@ class Menu(Flag2CountryMixin):
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
                             menu_obj.state = "StartMenu"
-                            if server_connection_state:
-                                client_conn.sendDisconnect()
                             return
 
                         elif SAVE_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                        try:
-                            if SEND_BACKUP_BUTTON.checkForInput(MOUSE_POS):
-                                if server_connection_state is not False:
-                                    CLICK_SOUND.play()
-                                    client_conn.backupGames()
-                                else:
-                                    start_time = pygame.time.get_ticks()
-                            elif LOAD_BACKUP_BUTTON.checkForInput(MOUSE_POS):
-                                if server_connection_state is not False:
-                                    CLICK_SOUND.play()
-                                    client_conn.loadBackup()
-                                else:
-                                    start_time = pygame.time.get_ticks()
-                            elif CHECK_FOR_UPDATE_BUTTON.checkForInput(MOUSE_POS):
-                                if server_connection_state is not False:
-                                    CLICK_SOUND.play()
-                                    version_up_to_date = client_conn.checkUpdate()
-                                else:
-                                    start_time = pygame.time.get_ticks()
-
-                        except socket.error:
-                            print("A Error with the network occurred")
+                        elif SEND_BACKUP_BUTTON.checkForInput(MOUSE_POS):
+                            CLICK_SOUND.play()
+                            client.post_backup()
+                        elif LOAD_BACKUP_BUTTON.checkForInput(MOUSE_POS):
+                            CLICK_SOUND.play()
+                            client.get_backup()
+                        elif CHECK_FOR_UPDATE_BUTTON.checkForInput(MOUSE_POS):
+                            CLICK_SOUND.play()
+                            current_version = client.get_current_game_version()
+                            if not current_version == self.game_version:
+                                pass
 
                         if WINDOW_SIZE_DROPDOWN.checkForInput(MOUSE_POS):
 
@@ -1578,7 +1524,7 @@ class Menu(Flag2CountryMixin):
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    Flag2CountryMixin.quit_game(None, None)
+                    Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 4:  # Mouse up
                         self.scroll_y -= self.scroll_speed * 2
@@ -1604,7 +1550,7 @@ class Menu(Flag2CountryMixin):
                             return
                         if QUIT_BUTTON.checkForInput(MOUSE_POS):
                             CLICK_SOUND.play()
-                            Flag2CountryMixin.quit_game(None, None)
+                            Flag2CountryMixin.quit_game()
 
             pygame.display.update()
             clock.tick(target_fps)
