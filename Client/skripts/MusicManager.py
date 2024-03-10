@@ -22,7 +22,7 @@ class MusicManager:
         Gets the next random song
         :return: Returns the chosen song
         """
-        path = os.path.join('assets/music')
+        path = os.path.join('../assets/music')
         song_list = self.get_song_list(path)
         f_song = random.choice(song_list)
         return f_song

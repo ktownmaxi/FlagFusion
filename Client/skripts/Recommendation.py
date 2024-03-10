@@ -124,7 +124,7 @@ class FlashcardDeck:
         :param filename: Name of the json file.
         :return:
         """
-        file_path = os.path.join("saves", filename)
+        file_path = os.path.join("../saves", filename)
         with open(file_path, "w") as json_file:
             json.dump(obj, json_file, default=self.flashcard_encoder, indent=4)
 
@@ -145,7 +145,7 @@ class FlashcardDeck:
         Method to create a path where to safe a json file to.
         :return: Path.
         """
-        directory = 'saves'
+        directory = '../saves'
         json_files = [file for file in os.listdir(directory) if file.endswith('.json')]
         filenames_without_extension = []
 

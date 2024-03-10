@@ -11,7 +11,7 @@ import requests
 
 import MusicManager
 import Recommendation
-from FlagGame.Client import client
+from FlagGame.Client.skripts import client
 from button import *
 
 pygame.init()
@@ -23,10 +23,10 @@ window_width, window_height = 1920, 1080
 SCREEN = pygame.display.set_mode((window_width, window_height))
 pygame.display.set_caption("Flag Quest")
 
-BG_img = pygame.image.load("assets/Background.jpg")
+BG_img = pygame.image.load("../assets/Background.jpg")
 BG = pygame.transform.scale(BG_img, (window_width, window_height))
 
-CLICK_SOUND = pygame.mixer.Sound('assets/tones/click.mp3')
+CLICK_SOUND = pygame.mixer.Sound('../assets/tones/click.mp3')
 
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
@@ -41,7 +41,7 @@ server_ip = '192.168.178.86'
 
 music_manager_obj = MusicManager.MusicManager()
 next_song = music_manager_obj.get_next_song()
-pygame.mixer.music.load(os.path.join('assets/music', next_song))
+pygame.mixer.music.load(os.path.join('../assets/music', next_song))
 pygame.mixer.music.set_volume(0.0)
 pygame.mixer.music.play()
 
@@ -154,7 +154,7 @@ class Flag2CountryMixin:
 
         else:
             items = os.listdir(
-                r"flags")
+                r"../flags")
 
             self.country_deck = Recommendation.FlashcardDeck()
 
@@ -171,8 +171,8 @@ class Flag2CountryMixin:
 
 
 class Flag2Country(Flag2CountryMixin):
-    correct_sound = pygame.mixer.Sound("assets/tones/correct.mp3")
-    incorrect_sound = pygame.mixer.Sound("assets/tones/wrong.mp3")
+    correct_sound = pygame.mixer.Sound("../assets/tones/correct.mp3")
+    incorrect_sound = pygame.mixer.Sound("../assets/tones/wrong.mp3")
     current_datetime = datetime.datetime.now()
     formatted_datetime = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
     start_time = None
@@ -261,7 +261,7 @@ class Flag2Country(Flag2CountryMixin):
                                        hovering_color="Light Blue")
 
             flag_img = pygame.image.load(
-                os.path.join('flags', self.picked_flag)
+                os.path.join('../flags', self.picked_flag)
             )
             flag = pygame.transform.scale(flag_img, (self.FLAG_WIDTH, self.FLAG_HEIGHT))
             SCREEN.blit(flag, (window_width / 2 - self.FLAG_WIDTH / 2, window_height / 9))
@@ -349,7 +349,7 @@ class Flag2Country(Flag2CountryMixin):
                             return
 
                 elif event.type == pygame.USEREVENT:
-                    pygame.mixer.music.load(os.path.join('assets/music', music_manager_obj.get_next_song()))
+                    pygame.mixer.music.load(os.path.join('../assets/music', music_manager_obj.get_next_song()))
                     pygame.mixer.music.play()
 
             pygame.display.update()
@@ -454,7 +454,7 @@ class Flag2Country(Flag2CountryMixin):
             SCREEN.blit(streak_text, streak_rect)
 
             flag_img = pygame.image.load(
-                os.path.join('flags', self.picked_flag)
+                os.path.join('../flags', self.picked_flag)
             )
             flag = pygame.transform.scale(flag_img, (self.FLAG_WIDTH, self.FLAG_HEIGHT))
             SCREEN.blit(flag, (window_width / 2 - self.FLAG_WIDTH / 2, window_height / 2 - window_height / 6))
@@ -518,7 +518,7 @@ class PvP_Flag2country(Flag2CountryMixin):
         self.list_of_chosen_countries = []
         self.FLAG_WIDTH, self.FLAG_HEIGHT = window_width / 3.5, window_height / 3.5
         self.flag_list = []
-        self.question_counter = -1
+        self.question_counter = 0
         self.old_question_counter_value = self.question_counter
         self.score, self.score_other_player = 0, 0
         self.acc_other_player = 100
@@ -526,7 +526,7 @@ class PvP_Flag2country(Flag2CountryMixin):
         self.won, self.game_finished = None, False
         self.player_id = 0
 
-    def increase_score_and_question_counter(self, increase_value=1):
+    def increase_score_and_right_question_counter(self, increase_value=1):
         self.score += increase_value
         self.right_question_counter += 1
 
@@ -550,9 +550,8 @@ class PvP_Flag2country(Flag2CountryMixin):
             return False
 
     def create_questions(self, current_question_count):
-
         detect_duplicate_list = []
-        file_path = os.path.join("assets", "sample_deck.json")
+        file_path = os.path.join("../assets", "sample_deck.json")
         self.country_deck = Recommendation.FlashcardDeck.read_from_json(file_path)
 
         self.picked_flag = self.flag_list[current_question_count]
@@ -580,9 +579,22 @@ class PvP_Flag2country(Flag2CountryMixin):
     @helper.run_once_a_second
     def update_score_and_acc(self):
         self.score_other_player, self.acc_other_player, self.game_finished = (
-            client.patch_score_to_api(current_score=self.score, current_acc=self.calculate_right_percentage(self.right_question_counter),
+            client.patch_score_to_api(current_score=self.score,
+                                      current_acc=self.calculate_right_percentage(self.right_question_counter),
                                       player_id=self.player_id))
-        print(self.score_other_player, self.acc_other_player, self.game_finished)
+        print(self.game_finished)
+
+    def check_if_game_finished(self):
+        if self.question_counter + 1 >= len(self.flag_list):
+            self.game_finished = True
+
+    def determinate_winner(self):
+        if self.game_finished:
+            client.post_finish(self.player_id)
+            if self.score > self.score_other_player:
+                self.won = True
+            else:
+                self.won = False
 
     def draw_screen(self):
         start_ticks = pygame.time.get_ticks()
@@ -595,17 +607,20 @@ class PvP_Flag2country(Flag2CountryMixin):
 
         while True:
             if server_connection_state:
+                if self.won is not None:
+                    menu_obj.state = "EndScreen"
+                    return
                 if not matched_players:
                     matched_players = client.only_get_matchmaking_status(self.player_id)
                 if matched_players:
                     self.update_score_and_acc()
                     if run_once_bool:
                         self.flag_list = client.get_country_list()["final_flags"]
-                        print(self.flag_list)
                         self.check_if_question_counter_increased()
                         self.increase_question_counter()
                         run_once_bool = False
-
+                    self.check_if_game_finished()
+                    self.determinate_winner()
                     if self.check_if_question_counter_increased():
                         answer_pos_list = [(window_width / 2 - window_width / 2.125, window_height / 2),
                                            (window_width / 2, window_height / 2),
@@ -666,7 +681,7 @@ class PvP_Flag2country(Flag2CountryMixin):
                                                                     window_height / 2))
 
                 flag_img = pygame.image.load(
-                    os.path.join('flags', self.picked_flag)
+                    os.path.join('../flags', self.picked_flag)
                 )
                 flag = pygame.transform.scale(flag_img, (self.FLAG_WIDTH, self.FLAG_HEIGHT))
                 SCREEN.blit(flag, (window_width / 2 - self.FLAG_WIDTH / 2 - window_width / 10, window_height / 9))
@@ -685,14 +700,8 @@ class PvP_Flag2country(Flag2CountryMixin):
                                                          window_height / 2 + window_height / 4))
 
                 if time_display == 0:
-                    if self.score > self.score_other_player:
-                        self.won = True
-                        menu_obj.state = "EndScreen"
-                        return
-                    else:
-                        self.won = False
-                        menu_obj.state = "EndScreen"
-                        return
+                    self.game_finished = True
+                    self.determinate_winner()
 
                 SCREEN.blit(TIMER_TEXT, TIMER_RECT)
                 SCREEN.blit(PLAYERS_SCORE, PLAYERS_SCORE_RECT)
@@ -770,25 +779,25 @@ class PvP_Flag2country(Flag2CountryMixin):
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 - window_width / 2.125, window_height / 2):
                             CLICK_SOUND.play()
-                            self.increase_score_and_question_counter()
+                            self.increase_score_and_right_question_counter()
                             self.increase_question_counter()
                     if event.key == pygame.K_2:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 + window_width / 15, window_height / 2):
                             CLICK_SOUND.play()
-                            self.increase_score_and_question_counter()
+                            self.increase_score_and_right_question_counter()
                             self.increase_question_counter()
                     if event.key == pygame.K_3:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 - window_width / 2.125, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
-                            self.increase_score_and_question_counter()
+                            self.increase_score_and_right_question_counter()
                             self.increase_question_counter()
                     if event.key == pygame.K_4:
                         if (button_list[3].x_pos, button_list[3].y_pos) == (
                                 window_width / 2 + window_width / 15, window_height / 2 + window_height / 4):
                             CLICK_SOUND.play()
-                            self.increase_score_and_question_counter()
+                            self.increase_score_and_right_question_counter()
                             self.increase_question_counter()
                     if event.type != pygame.KEYDOWN or event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4]:
                         CLICK_SOUND.play()
@@ -817,11 +826,12 @@ class PvP_Flag2country(Flag2CountryMixin):
                                 self.increase_question_counter()
                             if answer_4.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()
-                                self.increase_score_and_question_counter()
+                                self.increase_score_and_right_question_counter()
                                 self.increase_question_counter()
 
                         if server_connection_state is True and matched_players is not True:
                             if LEAVE_QUEUE_BUTTON.checkForInput(MOUSE_POS):
+                                client.leave_queue(self.player_id)
                                 CLICK_SOUND.play()
                                 menu_obj.state = "CompetitiveModeMenu"
                                 return
@@ -831,7 +841,7 @@ class PvP_Flag2country(Flag2CountryMixin):
                                 menu_obj.state = "StartMenu"
                                 return
                 if event.type == pygame.USEREVENT:
-                    pygame.mixer.music.load(os.path.join('assets/music', music_manager_obj.get_next_song()))
+                    pygame.mixer.music.load(os.path.join('../assets/music', music_manager_obj.get_next_song()))
                     pygame.mixer.music.play()
 
             pygame.display.update()
@@ -1242,12 +1252,14 @@ class Menu(Flag2CountryMixin):
             clock.tick(target_fps)
 
     def settings_menu(self):
+        import client
+
         global SCREEN, window_height, window_width, BG, target_fps
         Window_size_dropdown_state = False
         FPS_dropdown_state = False
-        UPLOAD_IMG = pygame.image.load("assets/send_backup_icon.png")
+        UPLOAD_IMG = pygame.image.load("../assets/send_backup_icon.png")
         UPLOAD_TR = pygame.transform.scale(UPLOAD_IMG, (window_width / 8, window_height / 6))
-        LOAD_IMG = pygame.image.load("assets/get_backup_icon.png")
+        LOAD_IMG = pygame.image.load("../assets/get_backup_icon.png")
         LOAD_TR = pygame.transform.scale(LOAD_IMG, (window_width / 8, window_height / 6))
 
         MUSIK_VOLUME_BAR = DraggableBar((window_width / 1.4, window_height / 2 + window_height / 8), (400, 30))
@@ -1370,7 +1382,7 @@ class Menu(Flag2CountryMixin):
 
             current_time = pygame.time.get_ticks()
 
-            if current_time - start_time < 4500 and False is False:  # Need Fix
+            if current_time - start_time < 4500 and client.ping_server() is False:
                 WARNING_TEXT = helper.get_font(helper.calculate_font_size(window_width, window_height, 0.05)).render(
                     "SERVER REFUSED THE CONNECTION",
                     True, RED)
@@ -1382,9 +1394,9 @@ class Menu(Flag2CountryMixin):
                 if event.type == pygame.QUIT:
                     Flag2CountryMixin.quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 4:  # Mausrad nach oben
+                    if event.button == 4:  # Scroll wheel to top
                         self.scroll_y -= self.scroll_speed * 2
-                    elif event.button == 5:  # Mausrad nach unten
+                    elif event.button == 5:  # Scroll wheel to bottom
                         self.scroll_y += self.scroll_speed * 2
                     elif event.button == 1:
                         if BACK_BUTTON.checkForInput(MOUSE_POS):
@@ -1458,7 +1470,7 @@ class Menu(Flag2CountryMixin):
             clock.tick(target_fps)
 
     def saved_games_menu(self):
-        BG_header_img = pygame.image.load("assets/Background-heading.jpg")
+        BG_header_img = pygame.image.load("../assets/Background-heading.jpg")
         BG_header = pygame.transform.scale(BG_header_img, (window_width, window_height / 4.431))
 
         scroll_window_height = window_height * 10
@@ -1538,7 +1550,7 @@ class Menu(Flag2CountryMixin):
                             if button.checkForInput(MOUSE_POS):
                                 CLICK_SOUND.play()
                                 filename = button.text_input + ".json"
-                                file_path = os.path.join("saves", filename)
+                                file_path = os.path.join("../saves", filename)
                                 loaded_deck = Recommendation.FlashcardDeck.read_from_json(file_path=file_path)
                                 fresh_game_obj = Flag2Country(filename=filename, country_deck=loaded_deck)
                                 menu_obj.state = "PlayFlag2Country"
