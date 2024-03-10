@@ -33,6 +33,11 @@ player_queue = queue.Queue()
 
 
 class Matchmaking(Resource):
+
+    def __init__(self):
+        self.matchmaking_status_args = reqparse.RequestParser()
+        self.matchmaking_status_args.add_argument("player_id", type=int, help="Player ID to identify Player")
+
     def put(self):
         if player_queue.empty():
             player_id = self.getID()
@@ -45,6 +50,9 @@ class Matchmaking(Resource):
             return {"started_matchmaking": False,
                     "player_id": player_id}, 200
         else:
+            global final_flags
+            final_flags = CommunicationAPI.create_flag_list()
+
             player_2_id = self.getID()
             player_1_id = player_queue.get()
 
@@ -62,10 +70,7 @@ class Matchmaking(Resource):
                     "player_id": player_2_id}, 200
 
     def get(self):
-        matchmaking_status_args = reqparse.RequestParser()
-        matchmaking_status_args.add_argument("player_id", type=int, help="Player ID to identify Player")
-
-        args = matchmaking_status_args.parse_args()
+        args = self.matchmaking_status_args.parse_args()
 
         player = Datastorage.query.filter_by(player_id=args["player_id"]).first()
         if player and not player_queue.empty():
@@ -75,18 +80,27 @@ class Matchmaking(Resource):
         else:
             return "Player not registered", 400
 
+    def patch(self):
+        args = self.matchmaking_status_args.parse_args()
+
+        try:
+            player_queue.queue.remove(args["player_id"])
+            return "Successfully removed player from queue", 200
+
+        except Exception:
+            return "Could not find player with this ID in queue", 400
+
     def getID(self):
         match_id = db.session.query(Datastorage).count() + 1
         return match_id
 
 
+final_flags = None
+
+
 class CommunicationAPI(Resource):
 
     def __init__(self):
-
-        self.flag_file_names = self.read_json(os.path.join(current_dir, '..', 'resources', 'flag_name.json'))
-        self.final_flags = self.create_flag_list()
-
         self.score_patch_args = reqparse.RequestParser()
         self.score_patch_args.add_argument("score", type=int, help="Current score of the player")
         self.score_patch_args.add_argument("acc", type=float, help="Accuracy of the questions")
@@ -121,21 +135,23 @@ class CommunicationAPI(Resource):
             file = json.load(json_datei)
             return file
 
-    def create_flag_list(self) -> list:
+    @staticmethod
+    def create_flag_list() -> list:
         """
         Method to create a list with 20 items of random flag file names
         :return: a list of the chosen countries
         """
+        flag_file_names = CommunicationAPI.read_json(os.path.join(current_dir, '..', 'resources', 'flag_name.json'))
         final_countries = []
         for i in range(0, 20):
-            random_country = random.choice(self.flag_file_names)
+            random_country = random.choice(flag_file_names)
             final_countries.append(random_country)
-        if self.detect_duplicates(final_countries):
-            self.create_flag_list()
+        if CommunicationAPI.detect_duplicates(final_countries):
+            CommunicationAPI.create_flag_list()
         return final_countries
 
     def get(self):
-        return {"final_flags": self.final_flags}
+        return {"final_flags": final_flags}
 
     def patch(self):
         args = self.score_patch_args.parse_args()
@@ -209,6 +225,11 @@ class BackupFunctionAPI(Resource):
 
     def post(self):
         pass
+
+
+@app.route('/ping')
+def ping_server():
+    return {"server_online": True}, 200
 
 
 api.add_resource(Matchmaking, "/matchmaking")

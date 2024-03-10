@@ -2,6 +2,7 @@ import os.path
 import zipfile
 import io
 from glob import glob
+import helper
 
 import requests
 
@@ -18,7 +19,7 @@ def get_in_queue_and_get_matchmaking_status():
         player_id = None
     return matchmaking_status, player_id
 
-
+@helper.run_once_a_second
 def only_get_matchmaking_status(player_id):
     response = requests.get(BASE + "matchmaking", json={"player_id": player_id})
     matchmaking_status = response.json()["started_matchmaking"]
@@ -35,11 +36,11 @@ def get_backup():
     response = requests.get(BASE + "backup", headers=headers_json)
     if response.status_code == 200:
         with zipfile.ZipFile(io.BytesIO(response.content), 'r') as zip_ref:
-            zip_ref.extractall(os.path.join("saves"))
+            zip_ref.extractall(os.path.join("../saves"))
 
 
 def post_backup():  # Not finished
-    extract_path = os.path.join("saves")
+    extract_path = os.path.join("../saves")
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w") as zf:
         for file in glob(os.path.join(extract_path, "*.json")):
@@ -65,3 +66,15 @@ def post_finish(player_id):
     response = requests.post(BASE + "communicationAPI", json={"game_finished": True, "player_id": player_id})
 
     return response
+
+
+def leave_queue(player_id):
+    response = requests.patch(BASE + "matchmaking", json={"player_id": player_id})
+    return response
+
+
+@helper.run_once
+def ping_server():
+    response = requests.get(BASE + "ping")
+    server_state = response.json()["server_online"]
+    return server_state
