@@ -1,14 +1,14 @@
 import json
+import os
+import queue
 import random
 from glob import glob
 from io import BytesIO
 from zipfile import ZipFile
 
-from flask import Flask, send_from_directory, request, send_file, jsonify
-from flask_restful import Api, Resource, reqparse, fields, marshal_with, abort
+from flask import Flask, request, send_file
+from flask_restful import Api, Resource, reqparse
 from flask_sqlalchemy import SQLAlchemy
-import os
-import queue
 
 app = Flask(__name__)
 api = Api(app)
@@ -19,6 +19,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 class Datastorage(db.Model):
+    """
+    Class for storing player data
+    """
     player_id = db.Column(db.Integer, primary_key=True)
     player_score = db.Column(db.Integer, nullable=False)
     player_acc = db.Column(db.Integer, nullable=False)
@@ -26,8 +29,8 @@ class Datastorage(db.Model):
     game_finished = db.Column(db.Boolean, nullable=True)
 
 
-with app.app_context():
-    db.create_all()
+# with app.app_context():
+#   db.create_all()
 
 player_queue = queue.Queue()
 
@@ -39,6 +42,10 @@ class Matchmaking(Resource):
         self.matchmaking_status_args.add_argument("player_id", type=int, help="Player ID to identify Player")
 
     def put(self):
+        """
+        Method for registering players, putting them on a waiting list and generating DB entries.
+        :returns: {"started_matchmaking": bool, "player_id": int}, int
+        """
         if player_queue.empty():
             player_id = self.getID()
             player_queue.put(player_id)
@@ -70,6 +77,10 @@ class Matchmaking(Resource):
                     "player_id": player_2_id}, 200
 
     def get(self):
+        """
+        Method for checking if matchmaking started for the inputted player
+        :returns: {"started_matchmaking": bool}, int
+        """
         args = self.matchmaking_status_args.parse_args()
 
         player = Datastorage.query.filter_by(player_id=args["player_id"]).first()
@@ -81,6 +92,10 @@ class Matchmaking(Resource):
             return "Player not registered", 400
 
     def patch(self):
+        """
+        Method for removing player from queue
+        :returns: {"success": bool}, int
+        """
         args = self.matchmaking_status_args.parse_args()
 
         try:
@@ -91,6 +106,10 @@ class Matchmaking(Resource):
             return "Could not find player with this ID in queue", 400
 
     def getID(self):
+        """
+        Method for generating player ID
+        :returns: int
+        """
         match_id = db.session.query(Datastorage).count() + 1
         return match_id
 
@@ -150,10 +169,19 @@ class CommunicationAPI(Resource):
             CommunicationAPI.create_flag_list()
         return final_countries
 
-    def get(self):
+    def get(self) -> dict:
+        """
+        Method to return a list of the final flags
+        :return: a list of the final flags
+        :rtype: dict
+        """
         return {"final_flags": final_flags}
 
     def patch(self):
+        """
+        Method to update the score of the player
+        :return: {"score": int, "acc": float, "game_finished": bool}, int
+        """
         args = self.score_patch_args.parse_args()
         player = None
 
@@ -176,6 +204,10 @@ class CommunicationAPI(Resource):
                             "game_finished": sec_player.game_finished}, 200
 
     def post(self):
+        """
+        Method to update the state of the game - used to finish the game when one player is done
+        :return: {"game_finished": bool, "player_id": int}, int
+        """
         args_pars = reqparse.RequestParser()
         args_pars.add_argument("game_finished", type=bool, help="Bool which indicates state of game")
         args_pars.add_argument("player_id", type=int, help="Player ID to identify player in DB")
@@ -206,6 +238,11 @@ class BackupFunctionAPI(Resource):
         pass
 
     def get(self):
+        """
+        Method to back up the gamefiles of the client
+        :return: a zip file
+        """
+
         path = fr'backups\{request.remote_addr}'
         par_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
         directory_path = os.path.join(par_dir, path)
@@ -229,6 +266,9 @@ class BackupFunctionAPI(Resource):
 
 @app.route('/ping')
 def ping_server():
+    """
+    Method to check if the server is online
+    """
     return {"server_online": True}, 200
 
 

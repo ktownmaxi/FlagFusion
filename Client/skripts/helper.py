@@ -4,7 +4,7 @@ import pygame
 import time
 
 
-def get_font(size: int, font_location: str = "assets/font.ttf") -> pygame.font.Font:
+def get_font(size: int, font_location: str = "../assets/font.ttf") -> pygame.font.Font:
     """
     Returns a font in the desired size
     :param font_location: location where the ttf file is stored
