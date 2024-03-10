@@ -63,16 +63,8 @@ def get_backup():
             zip_ref.extractall(os.path.join("../saves"))
 
 
-def post_backup():  # Not finished
-    extract_path = os.path.join("../saves")
-    stream = io.BytesIO()
-    with zipfile.ZipFile(stream, "w") as zf:
-        for file in glob(os.path.join(extract_path, "*.json")):
-            zf.write(file, os.path.basename(file))
-    stream.seek(0)
-    response = requests.post(BASE + "backup", headers=headers_zip, files={'file': ('downloaded_files.zip', stream)})
-    return response
-
+def post_backup():
+    pass
 
 def get_country_list() -> dict:
     """
@@ -130,3 +122,6 @@ def ping_server():
     response = requests.get(BASE + "ping")
     server_state = response.json()["server_online"]
     return server_state
+
+
+print(post_backup().text)
